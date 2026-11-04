@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "url": "{{baseUrl}}/health",
+  "headers": {},
+  "query": {},
+  "body": null
+}

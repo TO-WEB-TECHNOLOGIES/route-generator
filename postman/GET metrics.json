@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "url": "{{baseUrl}}/metrics",
+  "headers": {},
+  "query": {},
+  "body": null
+}

@@ -1,0 +1,23 @@
+# CHANGELOG — osrm-bff
+
+Fast-scan index first (date, tag, one line). Fuller entries, if any, go below the index. Open
+problems live in `docs/ARCHITECTURE_REVIEW.md`, not here.
+
+## Index
+
+| Date | Tag(s) | One-line summary |
+|---|---|---|
+| 2026-11-04 | INIT | Boilerplate: TS/Node 22 service with enrich API, OSRM client, Redis route cache, incremental match, ops scripts, docs; skill unpacked into `.claude/skills/`. |
+
+---
+
+## 2026-11-04 — INIT
+
+- `bff-road-routing.skill` (zip) extracted to `.claude/skills/bff-road-routing/` (Claude Code only
+  loads skills from that folder) and the archive removed. Added an "In the osrm-bff repo" file map
+  to `SKILL.md`; the rest is unchanged.
+- `CLAUDE.md` / `CLAUDE.local.md` adapted from `../ondc-api/CLAUDE.local.md` and the sibling
+  `CLAUDE.md` files (ondc-api has no `CLAUDE.md`). They keep: read-only git/env, plan before
+  implementing, contract first, audience-scoped `docs/`, the architecture-review delete-on-fix
+  rule, one-line changelog index, a commit suggestion after every change, and a Postman file per route.
+- Language: TypeScript on Node 22, the same stack as ondc-api (Express 5, ioredis 5.10).

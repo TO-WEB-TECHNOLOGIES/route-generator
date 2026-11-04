@@ -1,0 +1,21 @@
+{
+  "method": "POST",
+  "url": "{{baseUrl}}/internal/v1/track/enrich",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Internal-Token": "{{internalToken}}"
+  },
+  "query": {},
+  "body": {
+    "order_id": "od261101d3d87dff",
+    "stage": "Out-for-delivery",
+    "gps": "28.4302136,77.0433475",
+    "store_gps": "28.4211,77.0366",
+    "drop_gps": "28.4351,77.0512",
+    "path": [
+      { "lat_lng": "28.4290012,77.0421150", "sequence": 1, "timestamp": "2026-11-01T04:38:35.120Z" },
+      { "lat_lng": "28.4296540,77.0427702", "sequence": 2, "timestamp": "2026-11-01T04:38:50.410Z" },
+      { "lat_lng": "28.4302136,77.0433475", "sequence": 3, "timestamp": "2026-11-01T04:39:05.726Z" }
+    ]
+  }
+}
