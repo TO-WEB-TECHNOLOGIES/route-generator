@@ -34,9 +34,6 @@ with a ~1500 ms timeout, merge the result into the cache/SSE payload and `getTra
 
 ## Open design questions (from the skill)
 
-### ROUTE-01 `[OPEN]` Day-one cities/zones, so which Geofabrik extract
-Boilerplate default: India northern zone (`ops/osrm/build.sh`). Reversible.
-
 ### ROUTE-02 `[OPEN]` Where OSRM runs, and who owns the weekly refresh
 Assumed: same VPC as the BFF, private port 5000.
 

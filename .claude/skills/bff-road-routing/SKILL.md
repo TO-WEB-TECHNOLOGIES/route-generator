@@ -113,7 +113,6 @@ Once the BFF ships the fields:
 
 These are still open in the design. If a task depends on one, say so and ask, or pick a reversible default and call it out:
 
-- Which cities/zones are needed on day one, and so which Geofabrik extract.
 - Where OSRM runs (same VPC as the BFF) and who owns the weekly refresh.
 - Custom two-wheeler profile vs `car.lua` (car.lua obeys one-way streets, so routes can be longer than what riders actually take).
 - Whether drop GPS is reliably in `end.location.gps` for every seller, or should come from the saved address.

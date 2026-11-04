@@ -8,6 +8,7 @@ problems live in `docs/ARCHITECTURE_REVIEW.md`, not here.
 | Date | Tag(s) | One-line summary |
 |---|---|---|
 | 2026-11-04 | INIT | Boilerplate: TS/Node 22 service with enrich API, OSRM client, Redis route cache, incremental match, ops scripts, docs; skill unpacked into `.claude/skills/`. |
+| 2026-11-04 | ROUTE-01, OPS | Coverage decided: Delhi/Gurugram/Noida/Ghaziabad; new `ops/osrm/Dockerfile` downloads the northern + central zones, clips to the NCR box, builds and serves (see docs/deployment/osrm.md). |
 
 ---
 

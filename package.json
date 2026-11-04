@@ -13,7 +13,10 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
-    "smoke": "bash .claude/skills/bff-road-routing/scripts/smoke_test.sh"
+    "smoke": "bash .claude/skills/bff-road-routing/scripts/smoke_test.sh",
+    "osrm": "docker compose -f ops/docker-compose.yml up",
+    "osrm:bg": "docker compose -f ops/docker-compose.yml up -d",
+    "osrm:stop": "docker compose -f ops/docker-compose.yml down"
   },
   "dependencies": {
     "express": "^5.3.0",

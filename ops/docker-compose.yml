@@ -1,12 +1,22 @@
-# Local dev stack: OSRM + Redis + this service.
-# Build map data first: bash ops/osrm/build.sh  (writes ops/data/<date>/ and ops/data/current)
+# Local dev stack.
+#   docker compose -f ops/docker-compose.yml up -d            -> OSRM + Redis (run the service with `npm run dev`)
+#   docker compose -f ops/docker-compose.yml --profile app up -d --build   -> also runs osrm-bff in Docker
+#
+# First OSRM start downloads the NCR extracts and builds the dataset (several minutes); follow it
+# with `docker compose -f ops/docker-compose.yml logs -f osrm`. Later starts reuse the osrm-data volume.
 # Ports are bound to 127.0.0.1 only. OSRM must never be publicly reachable.
+name: osrm-bff
+
 services:
   osrm:
-    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
-    command: osrm-routed --algorithm mld --max-matching-size 100 /data/current/region-latest.osrm
+    build: ./osrm
+    image: osrm-bff/osrm-ncr:5.27.1
+    # Defaults are baked into ops/osrm/Dockerfile; override here if needed:
+    # environment:
+    #   OSRM_BBOX: "76.75,28.20,77.80,28.95"
+    #   OSRM_FORCE_REBUILD: "1"
     volumes:
-      - ./data:/data:ro
+      - osrm-data:/data
     ports:
       - "127.0.0.1:5000:5000"
     restart: unless-stopped
@@ -15,9 +25,15 @@ services:
     image: redis:7-alpine
     ports:
       - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     restart: unless-stopped
 
   osrm-bff:
+    profiles: ["app"]
     build: ..
     environment:
       PORT: "4100"
@@ -26,5 +42,12 @@ services:
       REDIS_KEY_PREFIX: "osrm-bff:dev:"
     ports:
       - "127.0.0.1:4100:4100"
-    depends_on: [osrm, redis]
+    depends_on:
+      osrm:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  osrm-data:

@@ -17,11 +17,13 @@ npm test                    # no Redis/OSRM needed
 npm run typecheck
 ```
 
-Full local stack (needs Docker and a built map extract):
+OSRM + Redis in Docker (coverage: Delhi, Gurugram, Noida, Ghaziabad). The first start downloads
+and builds the map, which takes several minutes:
 
 ```bash
-bash ops/osrm/build.sh && ln -sfn "$(date +%Y-%m-%d)" ops/data/current
-docker compose -f ops/docker-compose.yml up --build
+npm run osrm        # starts OSRM + Redis and shows logs; ready at "starting osrm-routed" (Ctrl+C stops)
+npm run osrm:bg     # same, in the background
+npm run osrm:stop   # stop both (map data is kept)
 npm run smoke -- http://localhost:5000
 ```
 

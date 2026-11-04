@@ -229,7 +229,6 @@ the minimum necessary question.
 
 These design questions are **open**. If a task depends on one, flag it, or pick a reversible
 default and call it out (tracked in `docs/ARCHITECTURE_REVIEW.md`):
-- Which cities/zones are needed on day one (which Geofabrik extract).
 - Where OSRM runs (same VPC as the BFF) and who owns the weekly refresh.
 - Custom two-wheeler profile vs `car.lua`.
 - Whether drop GPS is reliable in `end.location.gps` for every seller, or should come from the

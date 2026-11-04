@@ -4,7 +4,7 @@ One OSRM container on a private network, reachable only from the BFF, built from
 
 ## Map data
 
-Download an India extract from Geofabrik. A regional zone covering our cities (for example the northern zone for Delhi NCR and Haryana) builds faster and needs less memory than all of India. Which zones are needed on day one is still an open question.
+Day-one coverage (decided 2026-11-04): **Delhi, Gurugram, Noida, Ghaziabad.** Delhi NCR spans two Geofabrik zones: Delhi and Gurugram (Haryana) are in `asia/india/northern-zone`, but Noida and Ghaziabad (Uttar Pradesh) are in `asia/india/central-zone`. The northern zone alone does **not** cover Noida/Ghaziabad. The OSRM image (`ops/osrm/Dockerfile`) downloads both zones, clips each to the box `76.75,28.20,77.80,28.95` with `osmium extract`, and merges them. That builds much faster, and with far less memory, than a whole zone or all of India. Adding a city means widening `OSRM_BBOX` (and adding its zone if it's in another one) and rebuilding. Details: `docs/deployment/osrm.md`.
 
 ## Profile
 
