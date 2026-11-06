@@ -9,6 +9,9 @@ problems live in `docs/ARCHITECTURE_REVIEW.md`, not here.
 |---|---|---|
 | 2026-11-04 | INIT | Boilerplate: TS/Node 22 service with enrich API, OSRM client, Redis route cache, incremental match, ops scripts, docs; skill unpacked into `.claude/skills/`. |
 | 2026-11-04 | ROUTE-01, OPS | Coverage decided: Delhi/Gurugram/Noida/Ghaziabad; new `ops/osrm/Dockerfile` downloads the northern + central zones, clips to the NCR box, builds and serves (see docs/deployment/osrm.md). |
+| 2026-11-05 | OPS | OSRM image build failed (base is Debian 11, EOL; apt 404s): map prep moved to a separate `osrm-prep` container on Debian 12; OSRM image now has no apt step. |
+| 2026-11-05 | OPS | Map source switched to openstreetmap.fr per-state extracts (Delhi, Haryana, UP: ~279 MB vs ~549 MB Geofabrik zones); prep logs no longer flood with curl progress. |
+| 2026-11-06 | OPS | Manual maps: `.osm.pbf` files in `ops/maps/` are used instead of downloading (validated, read-only); prep re-runs automatically when inputs change (fingerprint marker). |
 
 ---
 

@@ -12,6 +12,18 @@ additive. Never rename, retype, or make them required without a versioned contra
 
 ---
 
+## Integration via ondc-logistics-api (2026-11-04)
+
+### INT-04 `[OPEN]` Caller becomes ondc-logistics-api: decisions D1–D6 pending
+Full plan and read-only findings: `task/osrm-via-logistics-api-plan.md`; order of work in parts:
+`task/phased-development-plan.md`; proposed app-facing flow (decisions Q1–Q6):
+`understanding/05-map-downloads-and-frontend-flow.md`. Blocking points:
+- Its `/on_track` breadcrumbs have no per-point timestamp (`../ondc-logistics-api/src/types/track/ondc.ts`),
+  but our enrich API requires `path[].timestamp` (plan Phase 1.1).
+- ONDC wire formats are frozen, so fields added at the logistics layer can't reach the buyer app over
+  the network (plan D1). INT-01..03 below still apply if the buyer app must show routes.
+- `/track` is valid only after pickup (LSP NACK `60012`), so no "route to store" from this path.
+
 ## Integration gaps (found 2026-11-04 against `../ondc-api` as it stands)
 
 ### INT-01 `[OPEN]` ondc-api doesn't record a timestamped `path` yet
@@ -31,6 +43,22 @@ viewer's `/track` call hits the BPP. Confirm the target polling design with the 
 Needed in ondc-api (not this repo): call `POST /internal/v1/track/enrich` from `processOnTrack`
 with a ~1500 ms timeout, merge the result into the cache/SSE payload and `getTrack`, add
 `OSRM_BFF_URL` / `OSRM_BFF_TOKEN` config, and update `docs/integration-docs/track.md` there.
+
+## Found against real OSRM (2026-11-06)
+
+### ROUTE-09 `[OPEN]` Points outside NCR silently snap to a road 1,000+ km away
+OSRM snaps any point to the nearest road. A Mumbai pair returned `Ok` after snapping 1,078 km to
+the box edge. `src/osrm/client.ts` doesn't check `waypoints[].distance`, so an order outside NCR
+would get an absurd `route_ahead`. Fix: reject when the snap distance exceeds a configured
+maximum (e.g. 200 m), and/or a coverage bbox check (Part 1.1).
+
+### ROUTE-10 `[OPEN]` `/match` needs `radiuses`
+With ±25 m GPS noise and OSRM's default radius, 9/25 points were dropped and the trace split, so
+`road_path` would be omitted. With `radiuses=30` per point: 1 matching, confidence 0.96. Realistic
+traces scored 0.94–0.97, so `MATCH_MIN_CONFIDENCE=0.5` looks fine (ROUTE-03). OSRM can report
+confidence > 1; clamp it. Matching without timestamps also scored 0.96. Fix: `MATCH_RADIUS_M`
+config (default 30) sent as `radiuses`; the smoke test's `/match` also needs it (it fails with
+`NoMatch` today because its sample point is 18.7 m from a road).
 
 ## Open design questions (from the skill)
 

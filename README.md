@@ -24,7 +24,7 @@ and builds the map, which takes several minutes:
 npm run osrm        # starts OSRM + Redis and shows logs; ready at "starting osrm-routed" (Ctrl+C stops)
 npm run osrm:bg     # same, in the background
 npm run osrm:stop   # stop both (map data is kept)
-npm run smoke -- http://localhost:5000
+npm run smoke -- http://127.0.0.1:5000   # 127.0.0.1, not localhost: on Windows localhost resolves to IPv6
 ```
 
 ## Endpoints

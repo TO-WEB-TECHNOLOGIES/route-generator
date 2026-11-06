@@ -2,23 +2,42 @@
 #   docker compose -f ops/docker-compose.yml up -d            -> OSRM + Redis (run the service with `npm run dev`)
 #   docker compose -f ops/docker-compose.yml --profile app up -d --build   -> also runs osrm-bff in Docker
 #
-# First OSRM start downloads the NCR extracts and builds the dataset (several minutes); follow it
-# with `docker compose -f ops/docker-compose.yml logs -f osrm`. Later starts reuse the osrm-data volume.
+# First start: osrm-prep downloads + clips the NCR map (~279 MB download), then osrm builds the
+# routing graph. Several minutes. Later starts reuse the osrm-data volume and take seconds.
 # Ports are bound to 127.0.0.1 only. OSRM must never be publicly reachable.
 name: osrm-bff
 
 services:
-  osrm:
-    build: ./osrm
-    image: osrm-bff/osrm-ncr:5.27.1
-    # Defaults are baked into ops/osrm/Dockerfile; override here if needed:
+  # Step 1: download the Delhi/Haryana/UP extracts, clip to the NCR box, merge. Runs once, then exits.
+  osrm-prep:
+    build:
+      context: ./osrm
+      dockerfile: prep.Dockerfile
+    image: osrm-bff/osrm-prep:1
+    pull_policy: build
+    # Defaults are baked into ops/osrm/prep.Dockerfile; override here if needed:
     # environment:
     #   OSRM_BBOX: "76.75,28.20,77.80,28.95"
     #   OSRM_FORCE_REBUILD: "1"
     volumes:
       - osrm-data:/data
+      # Map files you downloaded yourself (see ops/maps/README.md). If any .pbf is here, it's
+      # used instead of downloading. Read-only: prep never modifies your files.
+      - ./maps:/maps:ro
+    restart: "no"
+
+  # Step 2: build the routing graph (first start only) and serve it on :5000.
+  osrm:
+    build: ./osrm
+    image: osrm-bff/osrm-ncr:5.27.1
+    pull_policy: build
+    volumes:
+      - osrm-data:/data
     ports:
       - "127.0.0.1:5000:5000"
+    depends_on:
+      osrm-prep:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   redis:

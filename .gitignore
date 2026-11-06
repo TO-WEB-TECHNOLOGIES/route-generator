@@ -11,3 +11,9 @@ logs/
 ops/data/
 *.osm.pbf
 *.osrm*
+# Map files you download yourself (keep only the README)
+ops/maps/*
+!ops/maps/README.md
+
+understanding
+task
