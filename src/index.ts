@@ -30,17 +30,24 @@ const app = createApp({
       baseUrl: config.osrmBaseUrl,
       profile: config.osrmProfile,
       timeoutMs: config.osrmTimeoutMs,
+      maxSnapDistanceM: config.maxSnapDistanceM,
+      matchRadiusM: config.matchRadiusM,
     }),
     cache: createRedisRouteCache(redis),
     rerouteThresholdM: config.rerouteThresholdM,
     matchMinConfidence: config.matchMinConfidence,
     matchOverlapPoints: config.matchOverlapPoints,
     matchMaxPoints: config.matchMaxPoints,
+    coverage: config.coverageBbox,
   },
 });
 
 const server = app.listen(config.port, () => {
-  logger.info("server", "listening", { port: config.port, osrm: config.osrmBaseUrl });
+  logger.info("server", "listening", {
+    port: config.port,
+    osrm: config.osrmBaseUrl,
+    coverage: config.coverageBbox ?? "none",
+  });
 });
 
 function shutdown(signal: string) {

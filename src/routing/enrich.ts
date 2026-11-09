@@ -2,7 +2,7 @@
  * One GPS update in, the optional routing fields out. NEVER throws and never waits longer than one
  * OSRM timeout (route and match run in parallel). Anything that fails is simply omitted.
  */
-import { formatLatLng, type LatLng, type TimedPoint } from "../geo/point.js";
+import { formatLatLng, isInBbox, type Bbox, type LatLng, type TimedPoint } from "../geo/point.js";
 import { logger } from "../logger.js";
 import type { OsrmClient } from "../osrm/client.js";
 import type { RouteCache } from "./cache.js";
@@ -17,6 +17,8 @@ export interface EnrichDeps {
   matchMinConfidence: number;
   matchOverlapPoints: number;
   matchMaxPoints: number;
+  /** Area the map covers. Points outside never reach OSRM (ROUTE-09). Unset = no check. */
+  coverage?: Bbox | undefined;
 }
 
 export interface EnrichInput {
@@ -47,11 +49,16 @@ export async function enrich(deps: EnrichDeps, input: EnrichInput): Promise<Enri
   const to = destinationFor(input.stage);
   const destination = to === "store" ? input.storeGps : to === "drop" ? input.dropGps : undefined;
 
+  // Outside the map, OSRM would snap to a road possibly hundreds of km away: never ask it.
+  const covered = (p: LatLng) => !deps.coverage || isInBbox(p, deps.coverage);
+  const canRoute = Boolean(to && destination && covered(input.rider) && covered(destination));
+  const path = deps.coverage ? input.path.filter((p) => covered(p.point)) : input.path;
+
   const [ahead, trail] = await Promise.allSettled([
-    to && destination
+    canRoute && to && destination
       ? computeRouteAhead(deps, { orderId: input.orderId, stage: input.stage, rider: input.rider, to, destination })
       : Promise.resolve(undefined),
-    computeRoadPath(deps, input.orderId, input.path),
+    computeRoadPath(deps, input.orderId, path),
   ]);
 
   if (ahead.status === "fulfilled" && ahead.value) out.route_ahead = ahead.value;

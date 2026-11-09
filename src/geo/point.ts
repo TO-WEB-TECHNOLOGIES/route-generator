@@ -40,6 +40,34 @@ export function toOsrmCoord(p: LatLng): string {
   return `${p.lng},${p.lat}`;
 }
 
+/** Coverage box: the area our OSRM map covers. Same order as osmium/OSRM_BBOX: minLng,minLat,maxLng,maxLat. */
+export interface Bbox {
+  readonly minLng: number;
+  readonly minLat: number;
+  readonly maxLng: number;
+  readonly maxLat: number;
+}
+
+/** Parse "minLng,minLat,maxLng,maxLat". Returns null for anything malformed or inverted. */
+export function parseBbox(value: unknown): Bbox | null {
+  if (typeof value !== "string") return null;
+  const parts = value.split(",");
+  if (parts.length !== 4 || parts.some((p) => p.trim() === "")) return null;
+  const [minLng, minLat, maxLng, maxLat] = parts.map(Number) as [number, number, number, number];
+  if (![minLng, minLat, maxLng, maxLat].every(Number.isFinite)) return null;
+  if (minLng >= maxLng || minLat >= maxLat) return null;
+  if (minLat < -90 || maxLat > 90 || minLng < -180 || maxLng > 180) return null;
+  return { minLng, minLat, maxLng, maxLat };
+}
+
+/**
+ * Is the point inside the box? Also catches most lat/lng swaps for NCR: a swapped
+ * "77.04,28.43" parses as lat 77, far outside the box.
+ */
+export function isInBbox(p: LatLng, b: Bbox): boolean {
+  return p.lat >= b.minLat && p.lat <= b.maxLat && p.lng >= b.minLng && p.lng <= b.maxLng;
+}
+
 const EARTH_RADIUS_M = 6_371_008.8;
 
 export function haversineMeters(a: LatLng, b: LatLng): number {

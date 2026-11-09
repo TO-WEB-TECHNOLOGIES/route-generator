@@ -17,14 +17,14 @@ export interface MatchOk {
   ok: true;
   /** One geometry per matching, in trace order (OSRM splits a trace it can't match in one go). */
   geometries: string[];
-  /** Lowest confidence among the matchings (0..1). */
+  /** Lowest confidence among the matchings, clamped to 0..1 (OSRM can report > 1). */
   minConfidence: number;
 }
 
 export interface OsrmFail {
   ok: false;
   reason: Exclude<OsrmOutcome, "ok">;
-  /** OSRM `code`, e.g. NoRoute, NoMatch, TooBig. */
+  /** OSRM `code` (NoRoute, NoMatch, NoSegment, …) or ours: SnapTooFar, HTTP_<status>. */
   code?: string;
 }
 
@@ -37,26 +37,33 @@ export interface HttpOsrmClientOptions {
   baseUrl: string;
   profile: string;
   timeoutMs: number;
+  /** Reject a route when OSRM moved a point further than this (m) to reach a road. Unset = no check. */
+  maxSnapDistanceM?: number | undefined;
+  /** Per-point search radius (m) for /match. Unset or 0 = OSRM default. */
+  matchRadiusM?: number | undefined;
 }
 
 interface OsrmResponse {
   code?: string;
   routes?: Array<{ geometry?: string; distance?: number; duration?: number }>;
   matchings?: Array<{ geometry?: string; confidence?: number }>;
+  /** Input points snapped to the road network; `distance` = how far each was moved (m). */
+  waypoints?: Array<{ distance?: number }>;
 }
 
 export function createHttpOsrmClient(opts: HttpOsrmClientOptions): OsrmClient {
-  async function call(op: OsrmOp, url: string): Promise<OsrmResponse | OsrmFail> {
+  /**
+   * Calls OSRM. Failures (HTTP/network/timeout/non-Ok code) are recorded in metrics here; for an
+   * "Ok" body the caller records the final outcome, because it may still reject the result.
+   */
+  async function call(op: OsrmOp, url: string): Promise<{ body: OsrmResponse; done: (o: OsrmOutcome) => void } | OsrmFail> {
     const started = performance.now();
     const done = (outcome: OsrmOutcome) => recordOsrm(op, outcome, performance.now() - started);
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(opts.timeoutMs) });
       // OSRM answers NoRoute/NoMatch etc. with HTTP 400 and a JSON body, so parse regardless.
       const body = (await res.json().catch(() => ({}))) as OsrmResponse;
-      if (body.code === "Ok") {
-        done("ok");
-        return body;
-      }
+      if (body.code === "Ok") return { body, done };
       const code = body.code ?? `HTTP_${res.status}`;
       const isNoResult = res.status < 500 && body.code !== undefined;
       done(isNoResult ? "no_result" : "error");
@@ -74,15 +81,35 @@ export function createHttpOsrmClient(opts: HttpOsrmClientOptions): OsrmClient {
   }
 
   const base = `${opts.baseUrl}`;
+  const maxSnap = opts.maxSnapDistanceM;
+  const radius = opts.matchRadiusM && opts.matchRadiusM > 0 ? opts.matchRadiusM : undefined;
 
   return {
     async route(from, to) {
       const coords = `${toOsrmCoord(from)};${toOsrmCoord(to)}`;
       const url = `${base}/route/v1/${opts.profile}/${coords}?overview=full&geometries=polyline`;
-      const body = await call("route", url);
-      if ("ok" in body) return body;
+      const res = await call("route", url);
+      if ("ok" in res) return res;
+      const { body, done } = res;
+
+      // ROUTE-09: OSRM snaps any point to the nearest road, however far. A point far from every
+      // road (or outside the map) would otherwise produce a confident-looking but absurd route.
+      const snaps = (body.waypoints ?? []).map((w) => w.distance ?? 0);
+      if (maxSnap !== undefined && snaps.some((d) => d > maxSnap)) {
+        done("no_result");
+        logger.debug("osrm", "route rejected: point too far from any road", {
+          snap_m: snaps.map(Math.round),
+          max_snap_m: maxSnap,
+        });
+        return { ok: false, reason: "no_result", code: "SnapTooFar" };
+      }
+
       const r = body.routes?.[0];
-      if (!r || typeof r.geometry !== "string") return { ok: false, reason: "no_result", code: "NoRoute" };
+      if (!r || typeof r.geometry !== "string") {
+        done("no_result");
+        return { ok: false, reason: "no_result", code: "NoRoute" };
+      }
+      done("ok");
       return {
         ok: true,
         polyline: r.geometry,
@@ -94,17 +121,25 @@ export function createHttpOsrmClient(opts: HttpOsrmClientOptions): OsrmClient {
     async match(points) {
       const coords = points.map((p) => toOsrmCoord(p.point)).join(";");
       const timestamps = points.map((p) => p.unixSeconds).join(";");
+      const radiuses = radius !== undefined ? `&radiuses=${points.map(() => radius).join(";")}` : "";
       const url =
         `${base}/match/v1/${opts.profile}/${coords}` +
-        `?timestamps=${timestamps}&overview=full&geometries=polyline`;
-      const body = await call("match", url);
-      if ("ok" in body) return body;
+        `?timestamps=${timestamps}${radiuses}&overview=full&geometries=polyline`;
+      const res = await call("match", url);
+      if ("ok" in res) return res;
+      const { body, done } = res;
+
       const matchings = (body.matchings ?? []).filter((m) => typeof m.geometry === "string");
-      if (matchings.length === 0) return { ok: false, reason: "no_result", code: "NoMatch" };
+      if (matchings.length === 0) {
+        done("no_result");
+        return { ok: false, reason: "no_result", code: "NoMatch" };
+      }
+      done("ok");
       return {
         ok: true,
         geometries: matchings.map((m) => m.geometry as string),
-        minConfidence: Math.min(...matchings.map((m) => m.confidence ?? 0)),
+        // OSRM can report confidence > 1 (seen: 1.19, 4.11), so clamp before comparing.
+        minConfidence: Math.min(1, ...matchings.map((m) => m.confidence ?? 0)),
       };
     },
   };

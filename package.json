@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "smoke": "bash .claude/skills/bff-road-routing/scripts/smoke_test.sh",
+    "test:api": "postman collection run postman/collections/osrm-bff -e postman/environments/osrm-bff-local.environment.yaml",
     "osrm": "docker compose -f ops/docker-compose.yml up",
     "osrm:bg": "docker compose -f ops/docker-compose.yml up -d",
     "osrm:stop": "docker compose -f ops/docker-compose.yml down"

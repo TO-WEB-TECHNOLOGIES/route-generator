@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatLatLng, haversineMeters, parseLatLng, toOsrmCoord } from "../src/geo/point.js";
+import { formatLatLng, haversineMeters, isInBbox, parseBbox, parseLatLng, toOsrmCoord } from "../src/geo/point.js";
 import { decodePolyline, encodePolyline, joinPaths } from "../src/geo/polyline.js";
 
 describe("point", () => {
@@ -25,6 +25,33 @@ describe("point", () => {
   it("haversine: 0.001 deg latitude is ~111 m", () => {
     const d = haversineMeters({ lat: 28.43, lng: 77.04 }, { lat: 28.431, lng: 77.04 });
     assert.ok(Math.abs(d - 111.2) < 0.5, `got ${d}`);
+  });
+});
+
+describe("coverage box", () => {
+  const ncr = parseBbox("76.75,28.20,77.80,28.95")!;
+
+  it("parses minLng,minLat,maxLng,maxLat", () => {
+    assert.deepEqual(ncr, { minLng: 76.75, minLat: 28.2, maxLng: 77.8, maxLat: 28.95 });
+  });
+
+  it("rejects malformed or inverted boxes", () => {
+    for (const bad of ["", "1,2,3", "a,b,c,d", "77.8,28.2,76.75,28.95", "76.75,28.95,77.8,28.2", "0,0,200,10", 5]) {
+      assert.equal(parseBbox(bad), null, String(bad));
+    }
+  });
+
+  it("contains all four cities, excludes Mumbai and lat/lng swaps", () => {
+    for (const [name, lat, lng] of [
+      ["Delhi", 28.6139, 77.209],
+      ["Gurugram", 28.4595, 77.0266],
+      ["Noida", 28.5355, 77.391],
+      ["Ghaziabad", 28.6692, 77.4538],
+    ] as const) {
+      assert.ok(isInBbox({ lat, lng }, ncr), name);
+    }
+    assert.ok(!isInBbox({ lat: 19.076, lng: 72.8777 }, ncr), "Mumbai");
+    assert.ok(!isInBbox({ lat: 77.0266, lng: 28.4595 }, ncr), "swapped Gurugram");
   });
 });
 
