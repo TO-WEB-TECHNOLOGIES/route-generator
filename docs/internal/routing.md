@@ -7,15 +7,16 @@ _Created 2026-11-04 (initial boilerplate)._ Design spec: `.claude/skills/bff-roa
 | File | Role |
 |---|---|
 | `src/index.ts` | Wires config, Redis, OSRM client, HTTP server; graceful shutdown |
-| `src/app.ts` | Express app: `/health`, `/metrics`, `/internal/v1/track/enrich`, token guard |
+| `src/app.ts` | Express app: `/` and `/health` (same liveness handler, 2026-11-09), `/metrics`, `/v1/route`, `/internal/v1/track/enrich`, shared token guard (`requireInternalToken`) |
 | `src/routes/enrich.routes.ts` | Input validation (`parseEnrichBody`) -> `enrich()` |
-| `src/routing/enrich.ts` | Orchestrator. Runs route-ahead and road-path in parallel (`Promise.allSettled`). Never throws |
+| `src/routes/route.routes.ts` | `GET /v1/route`: validation, coverage check, OSRM result -> 200/400/404/422/503 (added 2026-11-06) |
+| `src/routing/enrich.ts` | Orchestrator. Coverage guard, then runs route-ahead and road-path in parallel (`Promise.allSettled`). Never throws |
 | `src/routing/stage.ts` | Stage -> destination, terminal stages |
 | `src/routing/route-ahead.ts` | Cached route + 30 m / stage-change re-route check |
 | `src/routing/road-path.ts` | Incremental `/match` of the trail tail, appended to the cached polyline |
 | `src/routing/cache.ts` | Redis keys, TTL constants, `RouteCache` interface (Redis errors = miss) |
 | `src/osrm/client.ts` | `/route` and `/match` over `fetch` with `AbortSignal.timeout`. Returns typed results, never throws |
-| `src/geo/point.ts` | `"lat,lng"` parsing, `toOsrmCoord` (lng first), haversine |
+| `src/geo/point.ts` | `"lat,lng"` parsing, `toOsrmCoord` (lng first), haversine, `Bbox` / `parseBbox` / `isInBbox` |
 | `src/geo/polyline.ts` | Encode/decode precision 5, `joinPaths` |
 | `src/metrics.ts` | OSRM call outcomes + latency, served on `/metrics` |
 | `src/config.ts` | All tunables |
@@ -44,9 +45,16 @@ All keys carry `REDIS_KEY_PREFIX` (ioredis `keyPrefix`). The cache is derived an
 | `MATCH_MIN_CONFIDENCE` | 0.5 | **Reversible default**, not from the design (ROUTE-03). Below this, omit `road_path` |
 | `MATCH_OVERLAP_POINTS` | 1 | Already-matched points re-sent so pieces join (skill: "a point or two") |
 | `MATCH_MAX_POINTS` | 100 | Cap per `/match`; must be <= `osrm-routed --max-matching-size` |
-| `INTERNAL_TOKEN` | empty | If set, `/internal/*` requires `X-Internal-Token` |
+| `MATCH_RADIUS_M` | 30 | Per-point `/match` search radius (`radiuses`). OSRM's default dropped 9/25 points at ±25 m noise; 30 m matched all (2026-11-06). 0 = OSRM default |
+| `COVERAGE_BBOX` | `76.75,28.20,77.80,28.95` | Area the map covers (`minLng,minLat,maxLng,maxLat`; `none` = off). Points outside never reach OSRM. **Must match `OSRM_BBOX`** in `ops/osrm/prep.Dockerfile` |
+| `MAX_SNAP_DISTANCE_M` | 200 | A `/route` whose `waypoints[].distance` (how far OSRM moved a point to reach a road) exceeds this is treated as no route (`SnapTooFar`) |
+| `INTERNAL_TOKEN` | empty | If set, `/internal/*` and `/v1/route` require `X-Internal-Token` |
 
 ## Algorithm notes
+
+**Coverage guard (2026-11-06).** In `enrich()`, `route_ahead` is only computed when the rider and
+the destination are both inside `COVERAGE_BBOX`. Trail points outside it are dropped before
+`/match`. `/v1/route` answers 422 for out-of-box points. Neither calls OSRM.
 
 **Route ahead.** Reuse the cached route when `stage` and `to` match and
 `haversine(cached.from, rider) <= REROUTE_THRESHOLD_M`. `distance_m` / `duration_s` therefore
@@ -68,3 +76,12 @@ resent with no OSRM call. The overlap stretch is drawn twice, on the same road.
 - OSRM answers `NoRoute`/`NoMatch` with HTTP 400 plus a JSON body. The client parses the body
   regardless of status and counts those as `no_result`, not `error`.
 - `slice(-0)` returns the whole array, which is why `MATCH_OVERLAP_POINTS=0` is special-cased.
+- OSRM snaps every point to the nearest road **however far away**: a Mumbai point came back `Ok`,
+  snapped 1,078 km to the NCR edge. Hence the coverage box and `MAX_SNAP_DISTANCE_M`. See
+  `docs/CHANGELOG.md` 2026-11-06 ROUTE-09.
+- OSRM can report `/match` confidence above 1 (seen 1.19, 4.11). The client clamps to 1 before
+  comparing with `MATCH_MIN_CONFIDENCE`. See 2026-11-06 ROUTE-10.
+- Metrics for a `/route` rejected as `SnapTooFar` count as `no_result`, not `ok`.
+- On Windows, use `127.0.0.1`, not `localhost`, for **both OSRM and Redis**: Node resolves
+  `localhost` to IPv6 `::1`, which Docker in WSL doesn't listen on (`ECONNREFUSED ::1:6379`). The
+  `REDIS_URL` default is `redis://127.0.0.1:6379` for this reason (2026-11-06).

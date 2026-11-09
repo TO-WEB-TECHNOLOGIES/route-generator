@@ -28,6 +28,8 @@ check() {
 check "route" "$BASE/route/v1/driving/$A;$B?overview=full&geometries=polyline"
 
 NOW=$(date +%s)
-check "match" "$BASE/match/v1/driving/$A;$B?timestamps=$((NOW-120));$NOW&overview=full&geometries=polyline"
+# radiuses=30 matches the service's MATCH_RADIUS_M; OSRM's default radius is too tight for the
+# sample points (one is 18.7 m from a road), which made this check fail with NoMatch.
+check "match" "$BASE/match/v1/driving/$A;$B?timestamps=$((NOW-120));$NOW&radiuses=30;30&overview=full&geometries=polyline"
 
 exit $fail

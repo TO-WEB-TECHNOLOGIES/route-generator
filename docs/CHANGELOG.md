@@ -12,6 +12,12 @@ problems live in `docs/ARCHITECTURE_REVIEW.md`, not here.
 | 2026-11-05 | OPS | OSRM image build failed (base is Debian 11, EOL; apt 404s): map prep moved to a separate `osrm-prep` container on Debian 12; OSRM image now has no apt step. |
 | 2026-11-05 | OPS | Map source switched to openstreetmap.fr per-state extracts (Delhi, Haryana, UP: ~279 MB vs ~549 MB Geofabrik zones); prep logs no longer flood with curl progress. |
 | 2026-11-06 | OPS | Manual maps: `.osm.pbf` files in `ops/maps/` are used instead of downloading (validated, read-only); prep re-runs automatically when inputs change (fingerprint marker). |
+| 2026-11-06 | ROUTE-09 | Out-of-coverage points no longer get absurd routes: `COVERAGE_BBOX` guard + `MAX_SNAP_DISTANCE_M` snap check in the OSRM client. |
+| 2026-11-06 | ROUTE-10 | `/match` sends `radiuses` (`MATCH_RADIUS_M`=30) and clamps confidence to 1; smoke test `match` passes on real OSRM. |
+| 2026-11-06 | API | New `GET /v1/route` (two-point road route; 400/404/422/503 errors), see docs/integration-docs/route.md. |
+| 2026-11-06 | FIX | `REDIS_URL` default `localhost` → `127.0.0.1`: on Windows it resolved to IPv6 `::1` and Redis was refused (Docker listens on IPv4 only). |
+| 2026-11-06 | TEST | Postman v3 collection `postman/collections/osrm-bff` (28 requests, 98 assertions) + `osrm-bff local` environment; `npm run test:api`. |
+| 2026-11-09 | API, TEST | `GET /` answers like `/health`; Postman env file renamed to `*.environment.yaml` (Postman didn't load the old name), collection variables + a check that stops requests sent to OSRM's port 5000 (`InvalidUrl`). |
 
 ---
 

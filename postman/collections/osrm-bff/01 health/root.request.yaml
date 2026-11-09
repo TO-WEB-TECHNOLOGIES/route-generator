@@ -1,0 +1,12 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/'
+order: 500
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 {status: ok} at the base URL', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json()).to.eql({ status: 'ok' });
+      });

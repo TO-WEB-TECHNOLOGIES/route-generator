@@ -1,0 +1,24 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 5000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "stage": "Out-for-delivery",
+      "gps": "28.497087,77.088067"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('400 order_id is required', () => {
+        pm.response.to.have.status(400);
+        pm.expect(pm.response.json().error).to.include('order_id');
+      });

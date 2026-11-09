@@ -1,0 +1,28 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "pm-edge-pending-{{$timestamp}}",
+      "stage": "Pending",
+      "gps": "28.497087,77.088067",
+      "store_gps": "28.495340,77.088059",
+      "drop_gps": "28.459469,77.026635"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // No rider assigned yet: no destination to route to. `path` omitted entirely (optional).
+      pm.test('200 with only drop_gps', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json()).to.eql({ drop_gps: '28.459469,77.026635' });
+      });

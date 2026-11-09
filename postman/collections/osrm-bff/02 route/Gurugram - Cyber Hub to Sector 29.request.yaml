@@ -1,0 +1,46 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/route?from=28.4950,77.0886&to=28.4595,77.0266'
+order: 1000
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+queryParams:
+  - key: from
+    value: '28.4950,77.0886'
+  - key: to
+    value: '28.4595,77.0266'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Decode a Google polyline at precision 5 (same as the app will).
+      function decode(str) {
+        const pts = []; let i = 0, lat = 0, lng = 0;
+        const next = () => { let r = 0, s = 0, b; do { b = str.charCodeAt(i++) - 63; r |= (b & 31) << s; s += 5; } while (b >= 32); return r & 1 ? ~(r >> 1) : r >> 1; };
+        while (i < str.length) { lat += next(); lng += next(); pts.push([lat / 1e5, lng / 1e5]); }
+        return pts;
+      }
+      const metres = (a, b) => { const R = 6371008.8, r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLng = (b[1] - a[1]) * r;
+        const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+
+      const body = pm.response.json();
+      pm.test('200 with polyline, distance, duration', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body).to.have.all.keys('from', 'to', 'polyline', 'distance_m', 'duration_s');
+        pm.expect(body.polyline).to.be.a('string').and.not.empty;
+      });
+      pm.test('echoes the points normalized', () => {
+        pm.expect(body.from).to.eql('28.495,77.0886');
+        pm.expect(body.to).to.eql('28.4595,77.0266');
+      });
+      pm.test('realistic distance/duration (~9.5 km by road)', () => {
+        pm.expect(body.distance_m).to.be.within(7000, 13000);
+        pm.expect(body.duration_s).to.be.within(300, 2400);
+      });
+      pm.test('decoded line starts/ends within 200 m of the requested points (no lat/lng swap, precision 5)', () => {
+        const pts = decode(body.polyline);
+        pm.expect(pts.length).to.be.above(10);
+        pm.expect(metres(pts[0], [28.495, 77.0886])).to.be.below(200);
+        pm.expect(metres(pts[pts.length - 1], [28.4595, 77.0266])).to.be.below(200);
+      });

@@ -107,6 +107,13 @@ curl -s http://osrm-bff:4100/health
 curl -s http://osrm-bff:4100/metrics
 ```
 
+Port 5000 is OSRM and 4100 is osrm-bff. OSRM only serves its own paths (`/route/v1/driving/...`,
+`/match/v1/...`, `/nearest/v1/...`), so opening `http://127.0.0.1:5000/` or sending osrm-bff paths
+like `/v1/route` to it returns `{"code":"InvalidUrl"}`. That's normal, not a fault (2026-11-09). To
+check OSRM by hand (note the lng,lat order):
+`curl "http://127.0.0.1:5000/route/v1/driving/77.0366,28.4211;77.0512,28.4351?overview=false"`
+should return `"code":"Ok"`.
+
 ## Weekly refresh (no downtime)
 
 1. `bash ops/osrm/build.sh` builds a new dated folder `ops/data/<YYYY-MM-DD>/` (same two images, same coverage).

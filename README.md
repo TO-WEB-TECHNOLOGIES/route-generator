@@ -32,10 +32,42 @@ npm run smoke -- http://127.0.0.1:5000   # 127.0.0.1, not localhost: on Windows 
 | Route | Purpose |
 |---|---|
 | `POST /internal/v1/track/enrich` | Routing fields for one GPS update: `docs/integration-docs/track-enrich.md` |
-| `GET /health` | Liveness (no dependency checks) |
+| `GET /v1/route` | Road route between two points: `docs/integration-docs/route.md` |
+| `GET /`, `GET /health` | Liveness (no dependency checks) |
 | `GET /metrics` | OSRM call outcomes and latency |
 
-Postman request files: `postman/`.
+### API tests (Postman)
+
+`postman/collections/osrm-bff/` is a Postman v3 collection (one YAML file per request) with
+29 requests and ~100 assertions:
+
+| Folder | What it checks |
+|---|---|
+| `01 health` | `/`, `/health`, `/metrics`, plus a warm-up route (a freshly started OSRM can be slow on its first requests) |
+| `02 route` | `/v1/route` in each city and across states (the decoded line starts and ends at the right points), then 400 / 401 / 422 cases |
+| `03 enrich: order lifecycle` | One order through every stage: route to store, route to drop + trail, duplicate update, 11 m move (cached), new points (trail grows), at delivery, delivered (cache cleared) |
+| `04 enrich: edge cases` | Order outside NCR, stages without a destination, malformed bodies, missing token |
+
+Run it with the service up (`npm run dev`) and OSRM running:
+
+```powershell
+npm run test:api
+# or, with your token:
+postman collection run postman/collections/osrm-bff -e postman/environments/osrm-bff-local.environment.yaml --env-var "internalToken=<INTERNAL_TOKEN from .env>"
+```
+
+In the Postman app, open the `postman/` folder (or import the collection) and select the
+**osrm-bff local** environment (it works without one too: the collection has the same defaults).
+`baseUrl` is the service, `http://127.0.0.1:4100`, never OSRM's port 5000. OSRM answers our
+paths with `{"code":"InvalidUrl"}`, and the collection now stops early with a clear message if
+`baseUrl` points at 5000. Use `127.0.0.1`, not `localhost`.
+
+A cloud copy lives in **USTART's workspace** (collection `osrm-bff`, environment `osrm-bff local`),
+created 2026-11-07 from these files via the Postman API. It is **not linked** to the repo: the
+files here are the source of truth, and changes must be re-uploaded (or linked via
+`postman workspace connect-git` once the repo has a git remote).
+
+Single-request files per route (repo convention): `postman/*.json`.
 
 ## Layout
 

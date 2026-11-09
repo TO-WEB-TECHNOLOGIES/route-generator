@@ -1,0 +1,22 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/route?from=28.4595,77.0266&to=28.6692,77.4538'
+order: 3000
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+queryParams:
+  - key: from
+    value: '28.4595,77.0266'
+  - key: to
+    value: '28.6692,77.4538'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Gurugram -> Ghaziabad crosses all four cities, so OSRM loads those parts of the map.
+      // Right after OSRM (re)starts, the first request into an untouched area can exceed the 1 s
+      // OSRM timeout and come back 503. That's expected and is why this request runs first.
+      pm.test('200, or 503 while OSRM is still cold', () => {
+        pm.expect(pm.response.code).to.be.oneOf([200, 503]);
+      });

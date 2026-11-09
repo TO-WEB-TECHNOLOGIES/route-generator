@@ -32,8 +32,14 @@ The routing logic lives in its own service (`osrm-bff`), which sits next to the 
 | Incremental trail matching | `src/routing/road-path.ts` |
 | Redis keys + TTL constants | `src/routing/cache.ts` |
 | Orchestration (never throws) | `src/routing/enrich.ts` |
-| Tunables (timeouts, thresholds) | `src/config.ts` |
-| Internal API contract | `docs/integration-docs/track-enrich.md` |
+| Coverage box (`isInBbox`), snap-distance guard | `src/geo/point.ts`, `src/osrm/client.ts` |
+| Two-point route endpoint `GET /v1/route` | `src/routes/route.routes.ts` |
+| Tunables (timeouts, thresholds, coverage, match radius) | `src/config.ts` |
+| Internal API contracts | `docs/integration-docs/track-enrich.md`, `docs/integration-docs/route.md` |
+
+OSRM snaps any point to the nearest road however far away, so never send it points outside the
+coverage box (`COVERAGE_BBOX`, which must match `OSRM_BBOX` in `ops/osrm/prep.Dockerfile`). Always
+send `radiuses` on `/match`: the default radius is too tight for city GPS noise.
 
 ## What the BFF does on each new GPS position
 

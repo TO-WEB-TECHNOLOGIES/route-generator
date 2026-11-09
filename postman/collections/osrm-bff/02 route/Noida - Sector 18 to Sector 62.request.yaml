@@ -1,0 +1,20 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/route?from=28.5700,77.3260&to=28.5355,77.3910'
+order: 2000
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+queryParams:
+  - key: from
+    value: '28.5700,77.3260'
+  - key: to
+    value: '28.5355,77.3910'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200, ~10 km by road', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().distance_m).to.be.within(7000, 15000);
+      });

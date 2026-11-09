@@ -44,21 +44,12 @@ Needed in ondc-api (not this repo): call `POST /internal/v1/track/enrich` from `
 with a ~1500 ms timeout, merge the result into the cache/SSE payload and `getTrack`, add
 `OSRM_BFF_URL` / `OSRM_BFF_TOKEN` config, and update `docs/integration-docs/track.md` there.
 
-## Found against real OSRM (2026-11-06)
+## Performance
 
-### ROUTE-09 `[OPEN]` Points outside NCR silently snap to a road 1,000+ km away
-OSRM snaps any point to the nearest road. A Mumbai pair returned `Ok` after snapping 1,078 km to
-the box edge. `src/osrm/client.ts` doesn't check `waypoints[].distance`, so an order outside NCR
-would get an absurd `route_ahead`. Fix: reject when the snap distance exceeds a configured
-maximum (e.g. 200 m), and/or a coverage bbox check (Part 1.1).
-
-### ROUTE-10 `[OPEN]` `/match` needs `radiuses`
-With ±25 m GPS noise and OSRM's default radius, 9/25 points were dropped and the trace split, so
-`road_path` would be omitted. With `radiuses=30` per point: 1 matching, confidence 0.96. Realistic
-traces scored 0.94–0.97, so `MATCH_MIN_CONFIDENCE=0.5` looks fine (ROUTE-03). OSRM can report
-confidence > 1; clamp it. Matching without timestamps also scored 0.96. Fix: `MATCH_RADIUS_M`
-config (default 30) sent as `radiuses`; the smoke test's `/match` also needs it (it fails with
-`NoMatch` today because its sample point is 18.7 m from a road).
+### PERF-01 `[DEFERRED]` Cache for `GET /v1/route` pairs
+Proposed `route:pair:{from}:{to}` (coordinates rounded ~10 m). Deferred 2026-11-06: OSRM answers
+in ~120 ms locally and handles hundreds of req/s; there are no load numbers that justify a cache
+yet. Revisit with a before/after metric once real traffic exists (CLAUDE.local.md Rule 7).
 
 ## Open design questions (from the skill)
 
@@ -67,7 +58,8 @@ Assumed: same VPC as the BFF, private port 5000.
 
 ### ROUTE-03 `[OPEN]` `MATCH_MIN_CONFIDENCE` value
 Set to 0.5 as a reversible default. Tune from real traces: log the confidence distribution on
-staging before fixing it.
+staging before fixing it. Synthetic evidence (2026-11-06, local NCR OSRM, `radiuses=30`): realistic
+25-point traces at 0 / ±10 / ±25 m noise scored 0.96–0.97, so 0.5 isn't dropping good traces.
 
 ### ROUTE-04 `[OPEN]` Low-confidence tail never advances
 On low confidence, `last_seq` isn't advanced, so the next update retries with more context. A

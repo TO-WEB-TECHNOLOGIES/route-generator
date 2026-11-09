@@ -1,0 +1,31 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 6000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "pm-edge-badpath",
+      "stage": "Out-for-delivery",
+      "gps": "28.497087,77.088067",
+      "path": [
+        { "lat_lng": "28.495340,77.088059", "sequence": 1, "timestamp": "2026-11-06T10:00:00.000Z" },
+        { "lat_lng": "28.495470,77.087364", "timestamp": "2026-11-06T10:00:15.000Z" }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // path[1] has no sequence. Note: Phase 2 of the plan will accept numeric-string sequences
+      // and missing timestamps (logistics breadcrumbs have neither); a missing sequence stays an error.
+      pm.test('400 pointing at path[1]', () => {
+        pm.response.to.have.status(400);
+        pm.expect(pm.response.json().error).to.include('path[1]');
+      });

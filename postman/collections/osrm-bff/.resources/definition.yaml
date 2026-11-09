@@ -1,0 +1,65 @@
+$kind: collection
+name: osrm-bff
+description: |-
+  Local test suite for the osrm-bff road-routing service (Delhi, Gurugram, Noida, Ghaziabad).
+
+  Needs: OSRM on 127.0.0.1:5000 with the NCR map, and the service running (`npm run dev`).
+  Requests go to the SERVICE (port 4100), never to OSRM (port 5000): OSRM answers every
+  /v1/... path with {"code":"InvalidUrl"}. A collection pre-request check stops the run if
+  baseUrl points at port 5000 or is unset.
+
+  Variables are declared on the collection with working local defaults, so it runs with no
+  environment selected. The `osrm-bff local` environment (postman/environments/osrm-bff-local.environment.yaml)
+  overrides them when selected.
+  - baseUrl: http://127.0.0.1:4100. Use 127.0.0.1, not localhost (on Windows localhost resolves
+    to IPv6 ::1).
+  - internalToken: same value as INTERNAL_TOKEN in the service's .env (empty if none).
+  - flowOrderId, routePolyline1, roadPath1, roadPath2: set by the "03 enrich" scripts at run time.
+
+  Folders run top to bottom. "03 enrich: order lifecycle" must run in order: each step builds on
+  the cache state of the previous one, under a fresh order id per run.
+
+  Contracts: docs/integration-docs/route.md, docs/integration-docs/track-enrich.md.
+  404 NO_ROUTE and 503 ROUTING_UNAVAILABLE aren't reproducible against a healthy local OSRM;
+  they're covered by the unit tests (test/route.test.ts).
+variables:
+  - key: baseUrl
+    value: 'http://127.0.0.1:4100'
+    description: osrm-bff service URL (port 4100). Not OSRM (port 5000).
+  - key: internalToken
+    value: ''
+    description: X-Internal-Token; same as INTERNAL_TOKEN in .env, empty if unset.
+  - key: flowOrderId
+    value: 'pm-flow-manual'
+    description: Order id for "03 enrich"; step 1 replaces it with a fresh one each run.
+  - key: routePolyline1
+    value: ''
+    description: Set by "03 enrich" step 2.
+  - key: roadPath1
+    value: ''
+    description: Set by "03 enrich" step 2.
+  - key: roadPath2
+    value: ''
+    description: Set by "03 enrich" step 5.
+scripts:
+  - type: http:beforeRequest
+    language: text/javascript
+    code: |-
+      // Fail fast with a clear message instead of OSRM's {"code":"InvalidUrl"}.
+      const base = pm.variables.get('baseUrl');
+      if (!base) {
+        throw new Error('baseUrl is not set. Use http://127.0.0.1:4100 (osrm-bff), or select the "osrm-bff local" environment.');
+      }
+      if (/:5000(\/|$)/.test(base)) {
+        throw new Error('baseUrl is ' + base + ', which is the OSRM server, not osrm-bff. Set baseUrl to http://127.0.0.1:4100 (check the selected environment and globals).');
+      }
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      // Runs after every request in the collection.
+      pm.test('responds within 2 s (routing budget: ~1 s OSRM timeout)', () => {
+        pm.expect(pm.response.responseTime).to.be.below(2000);
+      });
+      pm.test('JSON response', () => {
+        pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json');
+      });

@@ -1,0 +1,24 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 7000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "pm-edge-notoken-{{$timestamp}}",
+      "stage": "Pending",
+      "gps": "28.497087,77.088067"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // No X-Internal-Token header on purpose. Expectation depends on whether the service has a token set.
+      const tokenSet = Boolean(pm.environment.get('internalToken'));
+      pm.test(tokenSet ? '401 when the token is missing' : '200 (service has no INTERNAL_TOKEN set)', () => {
+        pm.response.to.have.status(tokenSet ? 401 : 200);
+      });

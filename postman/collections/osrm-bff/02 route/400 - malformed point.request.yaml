@@ -1,0 +1,20 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/route?from=cyber hub&to=91,77'
+order: 7000
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+queryParams:
+  - key: from
+    value: 'cyber hub'
+  - key: to
+    value: '91,77'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('400 INVALID_POINT for text and out-of-range latitude', () => {
+        pm.response.to.have.status(400);
+        pm.expect(pm.response.json().error.code).to.eql('INVALID_POINT');
+      });

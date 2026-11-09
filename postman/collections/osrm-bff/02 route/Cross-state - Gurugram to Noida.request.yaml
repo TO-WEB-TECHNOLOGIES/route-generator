@@ -1,0 +1,21 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/route?from=28.4595,77.0266&to=28.5355,77.3910'
+order: 5000
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+queryParams:
+  - key: from
+    value: '28.4595,77.0266'
+  - key: to
+    value: '28.5355,77.3910'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Haryana -> Uttar Pradesh through Delhi: proves the three state maps were merged into one graph.
+      pm.test('200, ~45 km across three states', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().distance_m).to.be.within(35000, 60000);
+      });

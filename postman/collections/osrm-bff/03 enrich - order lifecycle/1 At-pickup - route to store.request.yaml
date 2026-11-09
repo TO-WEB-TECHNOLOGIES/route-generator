@@ -1,0 +1,42 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "{{flowOrderId}}",
+      "stage": "At-pickup",
+      "gps": "28.497087,77.088067",
+      "store_gps": "28.495340,77.088059",
+      "drop_gps": "28.459469,77.026635",
+      "path": []
+    }
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      // Fresh order id per run => empty route cache for this order.
+      pm.collectionVariables.set('flowOrderId', 'pm-flow-' + Date.now());
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      const body = pm.response.json();
+      pm.test('200', () => pm.response.to.have.status(200));
+      pm.test('route_ahead goes to the store before pickup', () => {
+        pm.expect(body.route_ahead).to.be.an('object');
+        pm.expect(body.route_ahead.to).to.eql('store');
+        pm.expect(body.route_ahead.polyline).to.be.a('string').and.not.empty;
+        pm.expect(body.route_ahead.distance_m).to.be.above(0);
+        pm.expect(body.route_ahead.duration_s).to.be.at.least(0);
+      });
+      pm.test('drop_gps echoed (home marker), no road_path yet (empty trail)', () => {
+        pm.expect(body.drop_gps).to.eql('28.459469,77.026635');
+        pm.expect(body).to.not.have.property('road_path');
+      });

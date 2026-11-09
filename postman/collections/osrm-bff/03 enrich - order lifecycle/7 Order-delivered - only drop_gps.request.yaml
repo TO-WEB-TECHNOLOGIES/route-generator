@@ -1,0 +1,29 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 7000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "{{flowOrderId}}",
+      "stage": "Order-delivered",
+      "gps": "28.495652,77.086702",
+      "store_gps": "28.495340,77.088059",
+      "drop_gps": "28.459469,77.026635",
+      "path": []
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Terminal stage: routing stops and the order's route cache is deleted.
+      pm.test('200 with only drop_gps', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json()).to.eql({ drop_gps: '28.459469,77.026635' });
+      });

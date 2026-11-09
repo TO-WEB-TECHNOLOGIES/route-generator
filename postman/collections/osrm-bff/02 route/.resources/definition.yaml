@@ -1,0 +1,6 @@
+$kind: collection
+name: 02 route
+description: |-
+  GET /v1/route: road route between two points. Contract: docs/integration-docs/route.md.
+  Happy paths in each city and across states, then the error cases.
+order: 2000

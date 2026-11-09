@@ -1,0 +1,4 @@
+$kind: collection
+name: 01 health
+description: Liveness and OSRM metrics. No token needed.
+order: 1000

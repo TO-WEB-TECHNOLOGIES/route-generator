@@ -1,0 +1,28 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 8000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "{{flowOrderId}}",
+      "stage": "At-delivery",
+      "gps": "28.495652,77.086702",
+      "drop_gps": "28.459469,77.026635",
+      "path": []
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // If the terminal step had NOT cleared the cache, the old trail would come back here.
+      pm.test('200 without road_path: the cached trail was deleted on delivery', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json()).to.not.have.property('road_path');
+      });

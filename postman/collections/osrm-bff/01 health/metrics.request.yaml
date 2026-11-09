@@ -1,0 +1,16 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/metrics'
+order: 2000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 with route + match counters', () => {
+        pm.response.to.have.status(200);
+        const m = pm.response.json().osrm;
+        for (const op of ['route', 'match']) {
+          pm.expect(m[op]).to.have.all.keys('calls', 'outcomes', 'latency_ms_avg', 'latency_ms_max', 'last_error_at');
+          pm.expect(m[op].outcomes).to.have.all.keys('ok', 'no_result', 'timeout', 'error');
+        }
+      });

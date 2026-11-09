@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "url": "{{baseUrl}}/v1/route?from=28.4950,77.0886&to=28.4595,77.0266",
+  "headers": {
+    "X-Internal-Token": "{{internalToken}}"
+  },
+  "query": {
+    "from": "28.4950,77.0886",
+    "to": "28.4595,77.0266"
+  },
+  "body": null
+}

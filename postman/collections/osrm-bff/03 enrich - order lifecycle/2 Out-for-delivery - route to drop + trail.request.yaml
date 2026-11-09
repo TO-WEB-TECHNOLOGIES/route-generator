@@ -1,0 +1,41 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "{{flowOrderId}}",
+      "stage": "Out-for-delivery",
+      "gps": "28.497671,77.088763",
+      "store_gps": "28.495340,77.088059",
+      "drop_gps": "28.459469,77.026635",
+      "path": [
+        { "lat_lng": "28.495340,77.088059", "sequence": 1, "timestamp": "2026-11-06T10:00:00.000Z" },
+        { "lat_lng": "28.495470,77.087364", "sequence": 2, "timestamp": "2026-11-06T10:00:15.000Z" },
+        { "lat_lng": "28.496203,77.087864", "sequence": 3, "timestamp": "2026-11-06T10:00:30.000Z" },
+        { "lat_lng": "28.496921,77.088545", "sequence": 4, "timestamp": "2026-11-06T10:00:45.000Z" },
+        { "lat_lng": "28.497671,77.088763", "sequence": 5, "timestamp": "2026-11-06T10:01:00.000Z" }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      const body = pm.response.json();
+      pm.test('200', () => pm.response.to.have.status(200));
+      pm.test('stage change re-routes: route_ahead now goes to the drop', () => {
+        pm.expect(body.route_ahead.to).to.eql('drop');
+        pm.expect(body.route_ahead.distance_m).to.be.within(5000, 15000);
+      });
+      pm.test('road_path: the 5-point trail snapped to roads', () => {
+        pm.expect(body.road_path).to.be.a('string').and.not.empty;
+      });
+      pm.collectionVariables.set('roadPath1', body.road_path || '');
+      pm.collectionVariables.set('routePolyline1', (body.route_ahead || {}).polyline || '');

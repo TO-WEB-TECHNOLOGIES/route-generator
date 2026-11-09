@@ -1,0 +1,6 @@
+$kind: collection
+name: '04 enrich: edge cases'
+description: |-
+  Inputs the enrich endpoint must survive: out-of-coverage orders, stages without a destination,
+  and malformed bodies. Each request uses its own order id.
+order: 4000

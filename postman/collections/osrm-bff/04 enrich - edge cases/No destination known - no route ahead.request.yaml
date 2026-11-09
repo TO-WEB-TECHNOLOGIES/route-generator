@@ -1,0 +1,26 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 3000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "pm-edge-nodrop-{{$timestamp}}",
+      "stage": "Out-for-delivery",
+      "gps": "28.497087,77.088067"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Heading to the drop, but the caller didn't send drop_gps: nothing to route to, not an error.
+      pm.test('200 with an empty object', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json()).to.eql({});
+      });

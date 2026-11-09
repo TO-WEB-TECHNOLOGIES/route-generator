@@ -1,0 +1,10 @@
+name: osrm-bff local
+values:
+  - key: baseUrl
+    value: 'http://127.0.0.1:4100'
+    enabled: true
+    type: default
+  - key: internalToken
+    value: ''
+    enabled: true
+    type: secret

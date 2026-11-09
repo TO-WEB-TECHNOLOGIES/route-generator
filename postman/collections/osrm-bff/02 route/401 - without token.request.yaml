@@ -1,0 +1,18 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/route?from=28.4950,77.0886&to=28.4595,77.0266'
+order: 10000
+queryParams:
+  - key: from
+    value: '28.4950,77.0886'
+  - key: to
+    value: '28.4595,77.0266'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // No X-Internal-Token header on purpose. Expectation depends on whether the service has a token set.
+      const tokenSet = Boolean(pm.environment.get('internalToken'));
+      pm.test(tokenSet ? '401 when the token is missing' : '200 (service has no INTERNAL_TOKEN set)', () => {
+        pm.response.to.have.status(tokenSet ? 401 : 200);
+      });

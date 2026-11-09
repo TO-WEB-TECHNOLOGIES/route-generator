@@ -1,0 +1,31 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "pm-edge-mumbai-{{$timestamp}}",
+      "stage": "Out-for-delivery",
+      "gps": "19.0760,72.8777",
+      "drop_gps": "18.9220,72.8355",
+      "path": [
+        { "lat_lng": "19.0760,72.8777", "sequence": 1, "timestamp": "2026-11-06T10:00:00.000Z" },
+        { "lat_lng": "19.0770,72.8780", "sequence": 2, "timestamp": "2026-11-06T10:00:15.000Z" }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Coverage guard (ROUTE-09): never sent to OSRM, so no absurd route snapped to the NCR edge.
+      pm.test('200 with only drop_gps', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json()).to.eql({ drop_gps: '18.922,72.8355' });
+      });
