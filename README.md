@@ -35,18 +35,21 @@ npm run smoke -- http://127.0.0.1:5000   # 127.0.0.1, not localhost: on Windows 
 | `GET /v1/route` | Road route between two points: `docs/integration-docs/route.md` |
 | `GET /`, `GET /health` | Liveness (no dependency checks) |
 | `GET /metrics` | OSRM call outcomes and latency |
+| `GET /dev/route-viewer` | **Dev only** (`DEV_VIEWER_ENABLED`, off in production): map page that draws `/v1/route` and enrich responses the way the app should. Open `http://127.0.0.1:4100/dev/route-viewer` |
+
+How the app should draw these responses: `understanding/06-drawing-the-map-on-the-app.md`.
 
 ### API tests (Postman)
 
 `postman/collections/osrm-bff/` is a Postman v3 collection (one YAML file per request) with
-29 requests and ~100 assertions:
+31 requests and ~105 assertions:
 
 | Folder | What it checks |
 |---|---|
 | `01 health` | `/`, `/health`, `/metrics`, plus a warm-up route (a freshly started OSRM can be slow on its first requests) |
 | `02 route` | `/v1/route` in each city and across states (the decoded line starts and ends at the right points), then 400 / 401 / 422 cases |
 | `03 enrich: order lifecycle` | One order through every stage: route to store, route to drop + trail, duplicate update, 11 m move (cached), new points (trail grows), at delivery, delivered (cache cleared) |
-| `04 enrich: edge cases` | Order outside NCR, stages without a destination, malformed bodies, missing token |
+| `04 enrich: edge cases` | Order outside NCR, stages without a destination, logistics-shaped breadcrumbs (no timestamps), RTO back to the store, malformed bodies, missing token |
 
 Run it with the service up (`npm run dev`) and OSRM running:
 

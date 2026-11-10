@@ -207,3 +207,26 @@ describe("GET / and GET /health", () => {
     assert.equal(urls.length, 0);
   });
 });
+
+describe("GET /dev/route-viewer", () => {
+  it("is not served unless enabled", async () => {
+    // The shared app in this file is created without devViewer.
+    assert.equal((await fetch(`${baseUrl}/dev/route-viewer`)).status, 404);
+  });
+
+  it("serves the HTML page without a token when enabled, and no OSRM call", async () => {
+    const app = createApp({ deps: makeDeps({ coverage: NCR }), internalToken: "t0ken", devViewer: true });
+    const server = app.listen(0);
+    try {
+      const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/dev/route-viewer`);
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get("content-type") ?? "", /text\/html/);
+      const html = await res.text();
+      assert.match(html, /<title>Route viewer \(dev\)<\/title>/);
+      assert.doesNotMatch(html, /router\.project-osrm\.org/);
+      assert.equal(urls.length, 0);
+    } finally {
+      server.close();
+    }
+  });
+});

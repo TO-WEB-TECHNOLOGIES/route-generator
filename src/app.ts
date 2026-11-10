@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { logger } from "./logger.js";
 import { metricsSnapshot } from "./metrics.js";
+import { devViewerRouter } from "./routes/dev-viewer.routes.js";
 import { enrichRouter } from "./routes/enrich.routes.js";
 import { routeRouter } from "./routes/route.routes.js";
 import type { EnrichDeps } from "./routing/enrich.js";
@@ -8,6 +9,8 @@ import type { EnrichDeps } from "./routing/enrich.js";
 export interface AppOptions {
   deps: EnrichDeps;
   internalToken?: string | undefined;
+  /** Serve the dev map page at /dev/route-viewer (src/routes/dev-viewer.routes.ts). */
+  devViewer?: boolean | undefined;
 }
 
 /**
@@ -24,7 +27,7 @@ function requireInternalToken(token: string | undefined): RequestHandler {
   };
 }
 
-export function createApp({ deps, internalToken }: AppOptions) {
+export function createApp({ deps, internalToken, devViewer = false }: AppOptions) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "256kb" }));
@@ -38,6 +41,9 @@ export function createApp({ deps, internalToken }: AppOptions) {
   app.get("/metrics", (_req, res) => {
     res.json(metricsSnapshot());
   });
+
+  // Dev only: the page itself is static; its API calls go through the guard below.
+  if (devViewer) app.use("/dev/route-viewer", devViewerRouter());
 
   app.use("/v1/route", guard, routeRouter({ osrm: deps.osrm, coverage: deps.coverage }));
 

@@ -15,6 +15,14 @@ function str(name: string, fallback: string): string {
   return v === undefined || v === "" ? fallback : v;
 }
 
+function bool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  if (/^(1|true|yes|on)$/i.test(raw)) return true;
+  if (/^(0|false|no|off)$/i.test(raw)) return false;
+  throw new Error(`Config ${name} must be true or false, got "${raw}"`);
+}
+
 function num(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
@@ -58,6 +66,8 @@ export interface Config {
   maxSnapDistanceM: number;
   /** If set, /internal/* requires header X-Internal-Token with this value. */
   internalToken: string | undefined;
+  /** Serve the dev map page at /dev/route-viewer. Default: on, except when NODE_ENV=production. */
+  devViewerEnabled: boolean;
 }
 
 export function loadConfig(): Config {
@@ -90,5 +100,6 @@ export function loadConfig(): Config {
     coverageBbox,
     maxSnapDistanceM: num("MAX_SNAP_DISTANCE_M", 200),
     internalToken: token === "" ? undefined : token,
+    devViewerEnabled: bool("DEV_VIEWER_ENABLED", process.env.NODE_ENV !== "production"),
   };
 }

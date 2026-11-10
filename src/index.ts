@@ -25,6 +25,7 @@ redis.on("error", (err) => logger.warn("redis", "error", { error: err.message })
 
 const app = createApp({
   internalToken: config.internalToken,
+  devViewer: config.devViewerEnabled,
   deps: {
     osrm: createHttpOsrmClient({
       baseUrl: config.osrmBaseUrl,
@@ -48,6 +49,7 @@ const server = app.listen(config.port, () => {
     osrm: config.osrmBaseUrl,
     coverage: config.coverageBbox ?? "none",
   });
+  if (config.devViewerEnabled) logger.info("server", "dev route viewer", { url: `http://127.0.0.1:${config.port}/dev/route-viewer` });
 });
 
 function shutdown(signal: string) {
