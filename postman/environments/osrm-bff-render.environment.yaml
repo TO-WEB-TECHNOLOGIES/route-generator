@@ -1,0 +1,10 @@
+name: osrm-bff render
+values:
+  - key: baseUrl
+    value: 'https://REPLACE-WITH-SERVICE-NAME.onrender.com'
+    enabled: true
+    type: default
+  - key: internalToken
+    value: ''
+    enabled: true
+    type: secret

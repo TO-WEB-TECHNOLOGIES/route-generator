@@ -29,7 +29,8 @@ npm run smoke -- http://127.0.0.1:5000   # 127.0.0.1, not localhost: on Windows 
 
 ## Deploying
 
-- Render free tier (demo, NCR only, one container): `docs/deployment/render.md`, `render.yaml`.
+- Render free tier (demo, NCR only, one container): `docs/deployment/render.md` (steps), `docs/deployment/render-design.md` (why, alternatives), `render.yaml`.
+- Calling the API (base URL, token, endpoints, routes between two points): `docs/integration-docs/calling-the-api.md`.
 - OSRM container, map build and refresh: `docs/deployment/osrm.md`.
 
 ## Endpoints

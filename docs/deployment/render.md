@@ -3,6 +3,9 @@
 _Created 2026-11-10; step-by-step guide rewritten 2026-11-10. For a demo / QA deployment, not for
 production tracking (see [Limits](#7-limits-of-the-free-tier))._
 
+Why it's built this way, and the alternatives: [`render-design.md`](render-design.md). How to call
+the deployed API (base URL, token, endpoints): [`../integration-docs/calling-the-api.md`](../integration-docs/calling-the-api.md).
+
 Names in Render's and GitHub's web UI change from time to time. If a menu item below is worded
 slightly differently, look for the closest match.
 
@@ -29,21 +32,21 @@ slightly differently, look for the closest match.
   `ops/render/build-image.sh` copies the finished graph into an image, which you upload to GitHub
   Container Registry. Render only downloads and runs that image.
 
-| File | Role |
-|---|---|
-| `ops/render/Dockerfile` | The image: OSRM program + Node 22 + osrm-bff + the NCR graph |
-| `ops/render/start.sh` | Starts both programs inside the container |
+| File                        | Role                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `ops/render/Dockerfile`     | The image: OSRM program + Node 22 + osrm-bff + the NCR graph                    |
+| `ops/render/start.sh`       | Starts both programs inside the container                                       |
 | `ops/render/build-image.sh` | Copies the graph from your local volume, builds the image, optionally pushes it |
-| `render.yaml` | Render Blueprint: creates the web service and the Key Value |
-| `src/keepalive.ts` | Self-ping of the public `/health` so the free service doesn't fall asleep |
+| `render.yaml`               | Render Blueprint: creates the web service and the Key Value                     |
+| `src/keepalive.ts`          | Self-ping of the public `/health` so the free service doesn't fall asleep       |
 
 ### Measured (2026-11-10, local Docker with `--memory=512m --memory-swap=512m --cpus=0.1`)
 
-| | `OSRM_MMAP=1` (image default) | `OSRM_MMAP=0` |
-|---|---|---|
-| Container RAM | **45–57 MB** | 490 MB (96%): too close to the limit |
-| Start → first route | **~16 s** (OSRM up in 2 s) | ~131 s |
-| Route time once warm | 0.2–0.7 s; first cold request ~2 s | similar |
+|                      | `OSRM_MMAP=1` (image default)      | `OSRM_MMAP=0`                        |
+| -------------------- | ---------------------------------- | ------------------------------------ |
+| Container RAM        | **45–57 MB**                       | 490 MB (96%): too close to the limit |
+| Start → first route  | **~16 s** (OSRM up in 2 s)         | ~131 s                               |
+| Route time once warm | 0.2–0.7 s; first cold request ~2 s | similar                              |
 
 Image size: 368 MB.
 
@@ -51,13 +54,13 @@ Image size: 368 MB.
 
 ## 2. Before you start
 
-| You need | Notes |
-|---|---|
-| A **GitHub account** | It hosts the image (GitHub Container Registry) and the repo Render reads `render.yaml` from |
-| This **repo pushed to GitHub** | Render's Blueprint reads `render.yaml` from the repo |
-| A **Render account** | <https://render.com>. Connect it to GitHub when Render asks |
-| **Docker in WSL** | Where you already run `docker compose`. All commands below run in a **WSL terminal** |
-| The **NCR map built locally** | Step 1 checks this |
+| You need                       | Notes                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------- |
+| A **GitHub account**           | It hosts the image (GitHub Container Registry) and the repo Render reads `render.yaml` from |
+| This **repo pushed to GitHub** | Render's Blueprint reads `render.yaml` from the repo                                        |
+| A **Render account**           | <https://render.com>. Connect it to GitHub when Render asks                                 |
+| **Docker in WSL**              | Where you already run `docker compose`. All commands below run in a **WSL terminal**        |
+| The **NCR map built locally**  | Step 1 checks this                                                                          |
 
 Open a WSL terminal in the repo folder:
 
@@ -129,6 +132,7 @@ echo "$IMAGE"             # keep this: it goes into render.yaml
 ```
 
 What it does and prints:
+
 1. `copying the built ncr graph from volume osrm-bff_osrm-data` and `map built <time>`. If it says
    `no built map in the volume`, go back to step 1.
 2. `graph: ~600M`: the graph files it copied.
@@ -169,12 +173,13 @@ Stop the test with **Ctrl+C**.
 
 New packages on GitHub Container Registry are **private**.
 
-| Choice | How | Trade-off |
-|---|---|---|
-| **Keep it private** (recommended for company code) | Add a registry credential in Render (below) | One extra setup step |
-| Make it public | GitHub → Packages → `osrm-bff-render` → **Package settings** → **Change visibility** → Public | Anyone can download the image and read the compiled code. No secrets are inside (`.dockerignore` keeps `.env` out; the token comes from Render at run time) |
+| Choice                                             | How                                                                                           | Trade-off                                                                                                                                                   |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Keep it private** (recommended for company code) | Add a registry credential in Render (below)                                                   | One extra setup step                                                                                                                                        |
+| Make it public                                     | GitHub → Packages → `osrm-bff-render` → **Package settings** → **Change visibility** → Public | Anyone can download the image and read the compiled code. No secrets are inside (`.dockerignore` keeps `.env` out; the token comes from Render at run time) |
 
 **For a private package, add a registry credential in Render:**
+
 1. Create another classic GitHub token with only **`read:packages`** (so Render can't upload or
    delete anything).
 2. Render dashboard → **Settings** (workspace settings) → **Registry Credentials** → **Add
@@ -191,11 +196,11 @@ Open `render.yaml` in the repo root and:
 2. **Private package:** uncomment the `creds` block. Its `name` must match the credential name from
    step 6 (`ghcr`):
    ```yaml
-       image:
-         url: ghcr.io/<you>/osrm-bff-render:2026-11-10
-         creds:
-           fromRegistryCreds:
-             name: ghcr
+   image:
+     url: ghcr.io/<you>/osrm-bff-render:2026-11-10
+     creds:
+       fromRegistryCreds:
+         name: ghcr
    ```
 3. Region: `singapore` is the closest to India. **A region can't be changed after creation**, and
    the web service and Key Value must be in the same region (they are, in the file).
@@ -222,6 +227,7 @@ git push
    `maxmemoryPolicy` and `ipAllowList` fields were written from Render's spec but not yet
    validated by a real Render deploy. If you'd rather skip the Blueprint, use the
    [manual alternative](#5-manual-alternative-without-the-blueprint).
+
 4. It asks for **`LOGISTICS_BASE_URL`** (the ondc-logistics-api base URL, e.g.
    `https://<logistics-host>`). If there's no reachable logistics API yet, enter a placeholder and
    change it later. Until then `POST /v1/track` answers 503 (`LOGISTICS_UNAVAILABLE`); everything
@@ -282,6 +288,7 @@ Within ~3 s the first terminal prints `event: track_update` with `route_ahead`, 
 same update (that needs Redis, so it also proves the Key Value connection).
 
 **Logs** (service → **Logs**) should show, in this order:
+
 ```
 [start] starting osrm-routed (--mmap=1) on 127.0.0.1:5000
 [start] osrm-routed is up after … s
@@ -308,6 +315,7 @@ Image-backed services **don't redeploy on their own**. Every update is: build a 
 with a new tag, point Render at the new tag.
 
 **New code, or a refreshed map (weekly):**
+
 1. For a map refresh: put fresh NCR files in `ops/maps/` (or remove them to download), then
    `docker compose -f ops/docker-compose.yml up -d` and wait for **healthy** (step 1 again).
 2. Build and push with a new tag:
@@ -340,12 +348,12 @@ Packages until you delete them.
    credential if private) → name `osrm-bff`, region **Singapore**, instance type **Free**.
 3. **Environment variables:**
 
-   | Key | Value |
-   |---|---|
-   | `ENV` | `PREPROD` |
-   | `INTERNAL_TOKEN` | a random value, e.g. from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-   | `REDIS_URL` | the Key Value's Internal URL |
-   | `LOGISTICS_BASE_URL` | the logistics API base URL |
+   | Key                  | Value                                                                                                |
+   | -------------------- | ---------------------------------------------------------------------------------------------------- |
+   | `ENV`                | `PREPROD`                                                                                            |
+   | `INTERNAL_TOKEN`     | a random value, e.g. from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+   | `REDIS_URL`          | the Key Value's Internal URL                                                                         |
+   | `LOGISTICS_BASE_URL` | the logistics API base URL                                                                           |
 
 4. **Health Check Path:** `/health`. Create, then continue with step 10.
 
@@ -353,32 +361,32 @@ Packages until you delete them.
 
 ## 6. Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| Deploy fails pulling the image: `unauthorized` / `denied` / `not found` | Private package without a credential, wrong credential, or a typo in the URL | Step 6 credential with `read:packages`; check the URL matches what you pushed (lowercase) |
-| `repository name must be lowercase` when building/pushing | Capital letters in the image name | Use your GitHub username in lowercase |
-| Logs: `ENV=PREPROD requires INTERNAL_TOKEN`, deploy fails | `INTERNAL_TOKEN` not set | Set it under Environment (the Blueprint generates it) |
-| Every `/v1/*` call returns 401 | Missing or wrong `X-Internal-Token` | Copy the token again from Environment |
-| `/v1/route` returns 503 `ROUTING_UNAVAILABLE` right after a deploy | OSRM still starting (~20 s), or the first cold request | Retry after a minute; check the `[start] osrm-routed is up` log line |
-| Logs repeat `osrm-routed exited … restarting in 10 s` | OSRM can't start (e.g. graph missing or corrupt) | Rebuild the image (steps 1–4); make sure the build printed `graph: ~600M` |
-| Container restarts; Render shows out-of-memory | `OSRM_MMAP` was turned off | Remove any `OSRM_MMAP=0` override; the image default is `1` |
-| Logs repeat `scope":"redis","msg":"error"` | The free web service can't reach Key Value's internal URL | Use the Key Value's **External** URL in `REDIS_URL` and allow the service's outbound IPs in its access control. Without Redis everything still works except "latest update on reconnect" |
-| `POST /v1/track` returns 503 `LOGISTICS_UNAVAILABLE` | `LOGISTICS_BASE_URL` wrong, or the logistics API down | Fix the variable; check the logistics API from your machine |
-| Service sleeps anyway | Keep-alive not running or failing | Logs should show `keepalive started` with your public URL; `ping failed` lines show why. `RENDER_EXTERNAL_URL` is set by Render; `KEEPALIVE_URL` overrides it |
-| Bengaluru routes return 422 `OUT_OF_COVERAGE` | Expected: this image is NCR only | — |
+| Symptom                                                                 | Cause                                                                        | Fix                                                                                                                                                                                      |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deploy fails pulling the image: `unauthorized` / `denied` / `not found` | Private package without a credential, wrong credential, or a typo in the URL | Step 6 credential with `read:packages`; check the URL matches what you pushed (lowercase)                                                                                                |
+| `repository name must be lowercase` when building/pushing               | Capital letters in the image name                                            | Use your GitHub username in lowercase                                                                                                                                                    |
+| Logs: `ENV=PREPROD requires INTERNAL_TOKEN`, deploy fails               | `INTERNAL_TOKEN` not set                                                     | Set it under Environment (the Blueprint generates it)                                                                                                                                    |
+| Every `/v1/*` call returns 401                                          | Missing or wrong `X-Internal-Token`                                          | Copy the token again from Environment                                                                                                                                                    |
+| `/v1/route` returns 503 `ROUTING_UNAVAILABLE` right after a deploy      | OSRM still starting (~20 s), or the first cold request                       | Retry after a minute; check the `[start] osrm-routed is up` log line                                                                                                                     |
+| Logs repeat `osrm-routed exited … restarting in 10 s`                   | OSRM can't start (e.g. graph missing or corrupt)                             | Rebuild the image (steps 1–4); make sure the build printed `graph: ~600M`                                                                                                                |
+| Container restarts; Render shows out-of-memory                          | `OSRM_MMAP` was turned off                                                   | Remove any `OSRM_MMAP=0` override; the image default is `1`                                                                                                                              |
+| Logs repeat `scope":"redis","msg":"error"`                              | The free web service can't reach Key Value's internal URL                    | Use the Key Value's **External** URL in `REDIS_URL` and allow the service's outbound IPs in its access control. Without Redis everything still works except "latest update on reconnect" |
+| `POST /v1/track` returns 503 `LOGISTICS_UNAVAILABLE`                    | `LOGISTICS_BASE_URL` wrong, or the logistics API down                        | Fix the variable; check the logistics API from your machine                                                                                                                              |
+| Service sleeps anyway                                                   | Keep-alive not running or failing                                            | Logs should show `keepalive started` with your public URL; `ping failed` lines show why. `RENDER_EXTERNAL_URL` is set by Render; `KEEPALIVE_URL` overrides it                            |
+| Bengaluru routes return 422 `OUT_OF_COVERAGE`                           | Expected: this image is NCR only                                             | —                                                                                                                                                                                        |
 
 ---
 
 ## 7. Limits of the free tier
 
-| Limit | Effect | Mitigation |
-|---|---|---|
-| Sleeps after ~15 min without inbound traffic; ~1 min to wake | Streams drop; the logistics webhook (2 s timeout) fails while asleep | **Built-in keep-alive:** pings the public `/health` every 10 min. It keeps a running instance awake but can't wake a sleeping one |
-| Free instance hours per month | Running 24/7 uses nearly all of them, so nothing else free can run all month | Watch usage in the dashboard |
-| 0.1 CPU | Slower routes (a cross-NCR route ~1.2 s) | The image's 2.5 s OSRM timeout |
-| Deploys / restarts | Open streams close | Clients reconnect after 3 s and get the latest update first |
-| One instance | Required anyway: streams live in memory (`ARCHITECTURE_REVIEW.md` SCALE-02) | Don't scale out |
-| Free Key Value: 25 MB, no persistence | Cache lost on restart | Fine: the cache is disposable |
+| Limit                                                        | Effect                                                                       | Mitigation                                                                                                                        |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Sleeps after ~15 min without inbound traffic; ~1 min to wake | Streams drop; the logistics webhook (2 s timeout) fails while asleep         | **Built-in keep-alive:** pings the public `/health` every 10 min. It keeps a running instance awake but can't wake a sleeping one |
+| Free instance hours per month                                | Running 24/7 uses nearly all of them, so nothing else free can run all month | Watch usage in the dashboard                                                                                                      |
+| 0.1 CPU                                                      | Slower routes (a cross-NCR route ~1.2 s)                                     | The image's 2.5 s OSRM timeout                                                                                                    |
+| Deploys / restarts                                           | Open streams close                                                           | Clients reconnect after 3 s and get the latest update first                                                                       |
+| One instance                                                 | Required anyway: streams live in memory (`ARCHITECTURE_REVIEW.md` SCALE-02)  | Don't scale out                                                                                                                   |
+| Free Key Value: 25 MB, no persistence                        | Cache lost on restart                                                        | Fine: the cache is disposable                                                                                                     |
 
 **Caller budget on this deployment:** a `track_update` can arrive up to ~3 s after the `/on_track`,
 still well inside the ~15 s tracking cadence. A BFF calling `/internal/v1/track/enrich` with a
@@ -392,17 +400,17 @@ Render may change its free-tier rules; check them before relying on this.
 
 Set in `ops/render/Dockerfile`; Render's environment variables override them.
 
-| Variable | Image default | Why |
-|---|---|---|
-| `ENV` | `PREPROD` | Token required |
-| `PORT` | `10000` | Render's default |
-| `OSRM_BASE_URL` | `http://127.0.0.1:5000` | OSRM in the same container |
-| `OSRM_MAP` | `/data/ncr.osrm` | The baked graph |
-| `OSRM_MMAP` | `1` | Fits in 512 MB (see the measurements) |
-| `OSRM_TIMEOUT_MS` / `ENRICH_DEADLINE_MS` | `2500` / `3000` | 0.1 CPU (repo defaults stay 1000 / 1200) |
-| `COVERAGE_BBOX` | `76.75,28.20,77.80,28.95` | NCR only, matching the baked map |
-| `DEV_VIEWER_ENABLED` | `false` | No dev page on a public URL |
-| `REDIS_KEY_PREFIX` | `osrm-bff:render:` | |
-| `OSRM_START_TIMEOUT_S` | `120` (in `start.sh`) | How long to wait for OSRM before starting osrm-bff anyway |
-| `KEEPALIVE_URL` | unset → `RENDER_EXTERNAL_URL` + `/health` | Self-ping target; `none` turns it off |
-| `KEEPALIVE_INTERVAL_MS` | `600000` (10 min) | Under Render's ~15 min idle limit |
+| Variable                                 | Image default                             | Why                                                       |
+| ---------------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| `ENV`                                    | `PREPROD`                                 | Token required                                            |
+| `PORT`                                   | `10000`                                   | Render's default                                          |
+| `OSRM_BASE_URL`                          | `http://127.0.0.1:5000`                   | OSRM in the same container                                |
+| `OSRM_MAP`                               | `/data/ncr.osrm`                          | The baked graph                                           |
+| `OSRM_MMAP`                              | `1`                                       | Fits in 512 MB (see the measurements)                     |
+| `OSRM_TIMEOUT_MS` / `ENRICH_DEADLINE_MS` | `2500` / `3000`                           | 0.1 CPU (repo defaults stay 1000 / 1200)                  |
+| `COVERAGE_BBOX`                          | `76.75,28.20,77.80,28.95`                 | NCR only, matching the baked map                          |
+| `DEV_VIEWER_ENABLED`                     | `false`                                   | No dev page on a public URL                               |
+| `REDIS_KEY_PREFIX`                       | `osrm-bff:render:`                        |                                                           |
+| `OSRM_START_TIMEOUT_S`                   | `120` (in `start.sh`)                     | How long to wait for OSRM before starting osrm-bff anyway |
+| `KEEPALIVE_URL`                          | unset → `RENDER_EXTERNAL_URL` + `/health` | Self-ping target; `none` turns it off                     |
+| `KEEPALIVE_INTERVAL_MS`                  | `600000` (10 min)                         | Under Render's ~15 min idle limit                         |
