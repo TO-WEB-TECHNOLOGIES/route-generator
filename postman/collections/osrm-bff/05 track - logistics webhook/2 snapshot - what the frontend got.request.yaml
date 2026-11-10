@@ -1,0 +1,30 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/orders/{{trackOrderId}}/track'
+order: 2000
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      // The webhook builds the update after answering 202; wait out the routing deadline (1.2 s).
+      setTimeout(() => {}, 1500);
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      const u = pm.response.json();
+      pm.test('200 track_update', () => pm.response.to.have.status(200));
+      pm.test('GPS fields passed through', () => {
+        pm.expect(u.order_id).to.eql(pm.collectionVariables.get('trackOrderId'));
+        pm.expect(u.gps).to.eql('28.497671,77.088763');
+        pm.expect(u.stage).to.eql('Order-picked-up');
+        pm.expect(u.drop_gps).to.eql('28.459469,77.026635');
+        pm.expect(u.store_gps).to.eql('28.49534,77.088059');
+      });
+      pm.test('routes added: route_ahead to the drop + road_path (needs OSRM up)', () => {
+        pm.expect(u.route_ahead.to).to.eql('drop');
+        pm.expect(u.route_ahead.distance_m).to.be.within(5000, 15000);
+        pm.expect(u.road_path).to.be.a('string').and.not.empty;
+      });

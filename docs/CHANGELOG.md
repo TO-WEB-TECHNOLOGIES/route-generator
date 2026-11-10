@@ -23,6 +23,11 @@ problems live in `docs/ARCHITECTURE_REVIEW.md`, not here.
 | 2026-11-09 | D1 | Decided: the frontend calls osrm-bff, which requests track from ondc-logistics-api and pushes the result back (to build in Part 2.4–2.6). |
 | 2026-11-09 | TEST | Logistics fixtures + pure mapper `src/logistics/` (`toEnrichInput`), `test/logistics.test.ts`. |
 | 2026-11-09 | DEV | `GET /dev/route-viewer`: dev map page drawing `/v1/route` and enrich responses (`DEV_VIEWER_ENABLED`, off in production). |
+| 2026-11-10 | API | Live tracking: `POST /v1/track` (forwards to logistics), `POST /internal/v1/logistics/on_track` (webhook), SSE `GET /v1/orders/:id/track/events` + snapshot `GET /v1/orders/:id/track`; see docs/integration-docs/track.md. |
+| 2026-11-10 | CONFIG | `ENV` (`TEST` or `PREPROD`) replaces "token only if set": TEST never checks the token, PREPROD requires it and won't start without `INTERNAL_TOKEN`. |
+| 2026-11-10 | DOCS | `LOGISTICS_API_CHANGES.md`: what ondc-logistics-api must change (forward `/on_track` + `fulfillmentState`, `startGps`, `endGps`). |
+| 2026-11-10 | DEV | Dev viewer "Live order" tab: SSE + `/v1/track` polling, plus a simulated `/on_track` button. |
+| 2026-11-10 | OPS, ROUTE | Bengaluru added: `OSRM_BBOX` / `COVERAGE_BBOX` take `;`-separated boxes (NCR;Bengaluru), prep clips each file to every box in one pass, Karnataka extract added; a test keeps the two settings equal. |
 
 ---
 

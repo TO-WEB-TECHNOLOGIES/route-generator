@@ -34,6 +34,8 @@ The routing logic lives in its own service (`osrm-bff`), which sits next to the 
 | Orchestration (never throws) | `src/routing/enrich.ts` |
 | Coverage box (`isInBbox`), snap-distance guard | `src/geo/point.ts`, `src/osrm/client.ts` |
 | Two-point route endpoint `GET /v1/route` | `src/routes/route.routes.ts` |
+| Live tracking: `/v1/track` forward, logistics `/on_track` webhook, SSE push | `src/routes/track.routes.ts`, `src/routes/logistics-webhook.routes.ts`, `src/tracking/` |
+| Logistics event types, mapper, HTTP client | `src/logistics/` |
 | Tunables (timeouts, thresholds, coverage, match radius) | `src/config.ts` |
 | Internal API contracts | `docs/integration-docs/track-enrich.md`, `docs/integration-docs/route.md` |
 

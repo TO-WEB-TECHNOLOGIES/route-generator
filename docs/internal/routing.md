@@ -22,6 +22,12 @@ _Created 2026-11-04 (initial boilerplate)._ Design spec: `.claude/skills/bff-roa
 | `src/config.ts` | All tunables |
 | `src/logistics/types.ts` | Structural copies of ondc-logistics-api's `order_tracking` / `order_status` events + our proposed `OrderEndpoints` (2026-11-09) |
 | `src/logistics/mapper.ts` | Pure `toEnrichInput()` / `breadcrumbsToPath()`: string sequences, no timestamps; bad LSP breadcrumbs dropped, not fatal (2026-11-09) |
+| `src/routes/track.routes.ts` | Frontend: `POST /v1/track` (forward to logistics), `GET /v1/orders/:orderId/track` (snapshot), `.../track/events` (SSE) (2026-11-10) |
+| `src/routes/logistics-webhook.routes.ts` | `POST /internal/v1/logistics/on_track`: validates, answers 202, then `handleOnTrack()` (2026-11-10) |
+| `src/tracking/service.ts` | `handleOnTrack()`: stage (payload, else `GET .../status`) + enrich under `ENRICH_DEADLINE_MS`, then push + snapshot. Never throws |
+| `src/tracking/hub.ts` | In-memory SSE streams per order (one process only: SCALE-02), keep-alive, close on final stage |
+| `src/tracking/snapshot.ts` | Latest `track_update` per order in Redis |
+| `src/logistics/client.ts` | `requestTrack()` / `getFulfillmentState()` over `fetch` with timeout. Never throws |
 | `src/routes/dev-viewer.routes.ts` | `GET /dev/route-viewer`: dev map page (Leaflet + OSM tiles) drawing `/v1/route` and enrich responses. Only when `DEV_VIEWER_ENABLED` (2026-11-09) |
 | `test/fixtures/logistics/` | Logistics-shaped test data (see its README) |
 
@@ -36,6 +42,7 @@ All keys carry `REDIS_KEY_PREFIX` (ioredis `keyPrefix`). The cache is derived an
 |---|---|---|---|
 | `route:ahead:{order_id}` | `{ polyline, distance_m, duration_s, to, from: {lat,lng}, stage }` | `ROUTE_AHEAD_TTL_S` = 7200 | `cache.clear()` on terminal stage, else TTL |
 | `route:trail:{order_id}` | `{ polyline, last_seq }` | `ROUTE_TRAIL_TTL_S` = 7200 | `cache.clear()` on terminal stage, else TTL |
+| `route:track:{order_id}` | latest `TrackUpdate` (what the frontend got last) | `TRACK_SNAPSHOT_TTL_S` = 7200 | `snapshots.delete()` on a final stage (`tracking/service.ts`), else TTL. Added 2026-11-10 |
 
 ## Tunables
 
@@ -50,10 +57,15 @@ All keys carry `REDIS_KEY_PREFIX` (ioredis `keyPrefix`). The cache is derived an
 | `MATCH_OVERLAP_POINTS` | 1 | Already-matched points re-sent so pieces join (skill: "a point or two") |
 | `MATCH_MAX_POINTS` | 100 | Cap per `/match`; must be <= `osrm-routed --max-matching-size` |
 | `MATCH_RADIUS_M` | 30 | Per-point `/match` search radius (`radiuses`). OSRM's default dropped 9/25 points at ±25 m noise; 30 m matched all (2026-11-06). 0 = OSRM default |
-| `COVERAGE_BBOX` | `76.75,28.20,77.80,28.95` | Area the map covers (`minLng,minLat,maxLng,maxLat`; `none` = off). Points outside never reach OSRM. **Must match `OSRM_BBOX`** in `ops/osrm/prep.Dockerfile` |
+| `COVERAGE_BBOX` | `76.75,28.20,77.80,28.95;77.35,12.75,77.90,13.25` | Area the map covers: one box per region (NCR;Bengaluru since 2026-11-10), `;`-separated, each `minLng,minLat,maxLng,maxLat`; `none` = off. A point is covered if it's in any box. **Must equal `OSRM_BBOX`** in `ops/osrm/prep.Dockerfile` (checked by `test/geo.test.ts`) |
 | `MAX_SNAP_DISTANCE_M` | 200 | A `/route` whose `waypoints[].distance` (how far OSRM moved a point to reach a road) exceeds this is treated as no route (`SnapTooFar`) |
-| `INTERNAL_TOKEN` | empty | If set, `/internal/*` and `/v1/route` require `X-Internal-Token` |
-| `DEV_VIEWER_ENABLED` | `true` unless `NODE_ENV=production` | Serve the dev map page at `/dev/route-viewer` (2026-11-09). Keep off in production |
+| `ENV` | `PREPROD` when unset | `TEST`: no token checks. `PREPROD`: `X-Internal-Token` required on `/internal/*` and `/v1/*`, and startup fails without `INTERNAL_TOKEN` (2026-11-10) |
+| `INTERNAL_TOKEN` | empty | The shared secret. Ignored with `ENV=TEST` |
+| `DEV_VIEWER_ENABLED` | `true` with `ENV=TEST`, else `false` | Serve the dev map page at `/dev/route-viewer` (2026-11-09; default from `ENV` since 2026-11-10) |
+| `LOGISTICS_BASE_URL` | empty | ondc-logistics-api. Empty = `POST /v1/track` answers 503 and there's no stage fallback |
+| `LOGISTICS_TIMEOUT_MS` | 5000 | Per call to the logistics API (`/logistics/track`, `.../status`) |
+| `ENRICH_DEADLINE_MS` | 1200 | Max time the stage lookup + enrich may hold back a `track_update` (> `OSRM_TIMEOUT_MS`, so a normal OSRM failure still fits) |
+| `SSE_KEEPALIVE_MS` | 25000 | Keep-alive comment interval on frontend streams |
 
 ## Algorithm notes
 
@@ -80,6 +92,21 @@ client sends `timestamps` only when every point in the window has one; otherwise
 parameter out and OSRM matches on geometry alone (logistics breadcrumbs never carry time).
 `sequence` is then the only ordering. Confidence on untimed traces is still to be measured on
 real OSRM (ROUTE-03).
+
+**Live tracking (2026-11-10).** `POST /v1/track` forwards `{orderId}` to the logistics API and passes
+its answer through. The logistics API forwards each processed `/on_track` to the webhook, which
+answers 202 first. Then `handleOnTrack()`:
+1. Builds the GPS-only update: `gps`, `gps_timestamp`, `status`, `tracking_url`, `drop_gps`,
+   `store_gps`, `stage` from the payload. None of these wait on routing.
+2. Races "routing" against `ENRICH_DEADLINE_MS`. Routing = stage from the payload, else
+   `GET /logistics/orders/:id/status`, else `Unknown` (no route ahead); then the usual `enrich()`.
+   If routing loses, the update goes out without `route_ahead` / `road_path`, and enrich keeps going
+   in the background (its cache writes help the next update).
+3. Publishes `track_update` to the order's open streams, then saves the snapshot, or on a final
+   stage sends `track_closed`, ends the streams and deletes the snapshot.
+
+A new stream gets the snapshot first. `index.ts` calls `hub.closeAll()` on shutdown, because open
+SSE responses would otherwise keep `server.close()` waiting forever.
 
 ## Gotchas
 

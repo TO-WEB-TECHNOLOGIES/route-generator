@@ -1,0 +1,27 @@
+{
+  "method": "POST",
+  "url": "{{baseUrl}}/internal/v1/logistics/on_track",
+  "headers": { "Content-Type": "application/json", "X-Internal-Token": "{{internalToken}}" },
+  "query": {},
+  "body": {
+    "event": "order_tracking",
+    "transactionId": "aff231e9-10fc-4f93-8b8a-4c4b55d115a3",
+    "orderId": "{{orderId}}",
+    "status": "active",
+    "url": "https://lsp.example/ondc/track/1",
+    "gps": "28.497671,77.088763",
+    "locationTimestamp": "2026-11-10T05:30:32.866Z",
+    "path": [
+      { "lat_lng": "28.495340,77.088059", "sequence": "1" },
+      { "lat_lng": "28.495470,77.087364", "sequence": "2" },
+      { "lat_lng": "28.496203,77.087864", "sequence": "3" },
+      { "lat_lng": "28.496921,77.088545", "sequence": "4" },
+      { "lat_lng": "28.497671,77.088763", "sequence": "5" }
+    ],
+    "updatedAt": "2026-11-10T05:30:34.472Z",
+    "fulfillmentId": "1",
+    "fulfillmentState": "Order-picked-up",
+    "startGps": "28.495340,77.088059",
+    "endGps": "28.459469,77.026635"
+  }
+}

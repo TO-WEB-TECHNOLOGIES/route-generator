@@ -1,0 +1,13 @@
+$kind: collection
+name: '05 track: logistics webhook'
+description: |-
+  The logistics side of live tracking, without the logistics API: POST the forwarded /on_track to
+  the webhook, then read what the frontend would get from the snapshot. Run in order; step 1 picks
+  a fresh order id. Needs Redis (the snapshot) and OSRM (the routes) running, like the service.
+  Contract: docs/integration-docs/track.md, LOGISTICS_API_CHANGES.md.
+
+  The SSE stream (GET .../track/events) can't be asserted in the collection runner: use the dev
+  viewer's "Live order" tab, or postman/GET v1_orders_{orderId}_track_events.json in the app.
+  A forwarding POST /v1/track isn't here because it reaches a real LSP through the logistics API
+  (postman/POST v1_track.json).
+order: 5000

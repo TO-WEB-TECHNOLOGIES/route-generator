@@ -12,9 +12,10 @@ app's backend). It wraps a **self-hosted OSRM server** and turns each rider GPS 
 The BFF calls this service once per GPS update and merges the result into `on_track` and
 `GET /api/v1/track/:order_id`. **Phones never call a routing server** (OSRM or any public routing API).
 
-**Decided 2026-11-09 (D1, not built yet):** the frontend will call this service, which requests
-`/track` from `ondc-logistics-api`, enriches it, and pushes the result back. Until app auth is
-designed (`docs/ARCHITECTURE_REVIEW.md` INT-04), every route stays internal-only.
+**Since 2026-11-10 (D1):** the frontend calls `POST /v1/track`; we forward it to
+`ondc-logistics-api`, which forwards each `/on_track` back to us; we add routes and push a
+`track_update` over SSE (`docs/integration-docs/track.md`). The logistics side is pending
+(`LOGISTICS_API_CHANGES.md`), and app auth is still open (`docs/ARCHITECTURE_REVIEW.md` INT-04).
 
 ```
 seller GPS -> ondc-api (BFF) --POST /internal/v1/track/enrich--> osrm-bff --> OSRM :5000 (private)
@@ -136,8 +137,10 @@ If a requested change needs a contract change, stop and tell the user.
 ## 7. SECURITY / NETWORK
 
 - OSRM listens on the private network only (port 5000). No public access, no auth.
-- This service is internal-only. If `INTERNAL_TOKEN` is set, every `/internal/*` call must carry
-  `X-Internal-Token`.
+- Token checks follow `ENV` (2026-11-10): `ENV=TEST` never checks; `ENV=PREPROD` requires
+  `X-Internal-Token` on `/internal/*` and `/v1/*` and refuses to start without `INTERNAL_TOKEN`.
+  `/v1/track*` is called by the frontend, but until app login is designed the token is for QA
+  builds only and must never ship in a release build.
 - **Never call the public demo server (`router.project-osrm.org`)** from code, tests or the app.
   It allows ~1 req/s for the whole app, is non-commercial only, and can block us without notice.
   If a change would make the app call any routing API directly in a release build, push back.

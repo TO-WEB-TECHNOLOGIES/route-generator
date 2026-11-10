@@ -1,0 +1,7 @@
+{
+  "method": "POST",
+  "url": "{{baseUrl}}/v1/track",
+  "headers": { "Content-Type": "application/json", "X-Internal-Token": "{{internalToken}}" },
+  "query": {},
+  "body": { "orderId": "{{orderId}}" }
+}

@@ -1,0 +1,21 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/logistics/on_track'
+order: 5000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    { "gps": "28.497671,77.088763", "path": [] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('400 orderId is required', () => {
+        pm.response.to.have.status(400);
+        pm.expect(pm.response.json().error).to.include('orderId');
+      });

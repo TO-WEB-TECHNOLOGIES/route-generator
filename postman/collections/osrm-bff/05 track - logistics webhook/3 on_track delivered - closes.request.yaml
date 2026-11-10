@@ -1,0 +1,29 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/logistics/on_track'
+order: 3000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "event": "order_tracking",
+      "orderId": "{{trackOrderId}}",
+      "status": "active",
+      "gps": "28.459469,77.026635",
+      "locationTimestamp": "2026-11-10T05:52:00.000Z",
+      "updatedAt": "2026-11-10T05:52:01.000Z",
+      "fulfillmentState": "Order-delivered",
+      "startGps": "28.495340,77.088059",
+      "endGps": "28.459469,77.026635"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Final stage: streams get track_update, then track_closed, and the snapshot is dropped.
+      pm.test('202', () => pm.response.to.have.status(202));

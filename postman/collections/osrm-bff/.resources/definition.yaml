@@ -1,7 +1,7 @@
 $kind: collection
 name: osrm-bff
 description: |-
-  Local test suite for the osrm-bff road-routing service (Delhi, Gurugram, Noida, Ghaziabad).
+  Local test suite for the osrm-bff road-routing service (Delhi NCR + Bengaluru).
 
   Needs: OSRM on 127.0.0.1:5000 with the NCR map, and the service running (`npm run dev`).
   Requests go to the SERVICE (port 4100), never to OSRM (port 5000): OSRM answers every
@@ -15,6 +15,7 @@ description: |-
     to IPv6 ::1).
   - internalToken: same value as INTERNAL_TOKEN in the service's .env (empty if none).
   - flowOrderId, routePolyline1, roadPath1, roadPath2: set by the "03 enrich" scripts at run time.
+  - trackOrderId: set by "05 track" step 1.
 
   Folders run top to bottom. "03 enrich: order lifecycle" must run in order: each step builds on
   the cache state of the previous one, under a fresh order id per run.
@@ -41,6 +42,9 @@ variables:
   - key: roadPath2
     value: ''
     description: Set by "03 enrich" step 5.
+  - key: trackOrderId
+    value: 'pm-track-manual'
+    description: Order id for "05 track"; step 1 replaces it with a fresh one each run.
 scripts:
   - type: http:beforeRequest
     language: text/javascript

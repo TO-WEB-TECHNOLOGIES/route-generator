@@ -14,21 +14,26 @@ additive. Never rename, retype, or make them required without a versioned contra
 
 ## Integration via ondc-logistics-api (2026-11-04)
 
-### INT-04 `[OPEN]` Logistics integration: D1 and D5 decided, D2–D4, D6 and app auth pending
+### INT-04 `[OPEN]` Logistics integration: osrm-bff side built, logistics change and app auth pending
 Full plan and read-only findings: `task/osrm-via-logistics-api-plan.md`; order of work in parts:
 `task/phased-development-plan.md`; proposed app-facing flow (decisions Q1–Q6):
 `understanding/05-map-downloads-and-frontend-flow.md`.
-- **D1 decided 2026-11-09:** the frontend calls osrm-bff. osrm-bff requests `/track` from
-  ondc-logistics-api, enriches the result, and pushes it back to the app (Part 2.4–2.6). Not built yet.
+- **D1 decided 2026-11-09, built 2026-11-10 on the osrm-bff side:** the frontend calls `POST /v1/track`;
+  we forward to `POST /logistics/track`; logistics forwards each `/on_track` to our webhook (Q2: webhook,
+  not SSE); we push `track_update` over SSE (D2: one event, routing under `ENRICH_DEADLINE_MS`); the
+  frontend polls `/v1/track` (D4). See `docs/integration-docs/track.md`.
+- **Pending, ondc-logistics-api:** the forward itself plus `fulfillmentState`, `startGps`, `endGps`
+  (`LOGISTICS_API_CHANGES.md`). Without the GPS fields there's no route ahead and no home marker.
+  Without `fulfillmentState` we fall back to one `GET .../status` call per update.
 - **D5 decided 2026-11-09:** logistics stages mapped per plan Phase 1.3 (see `docs/CHANGELOG.md`).
 - Timestamp-less breadcrumbs: now accepted (2026-11-09). Match confidence on untimed traces is still
   to be measured on real OSRM (ROUTE-03).
-- **New, blocking for Part 2.6:** osrm-bff becomes app-facing, so it needs app auth (understanding/05
-  Q4). Today `/v1/route` and enrich only have the shared `X-Internal-Token`, which must never ship
-  in an app. CLAUDE.md §1/§7 ("internal-only") need rewording once this is designed.
+- **Blocking for production:** osrm-bff is now app-facing, so it needs app auth (understanding/05 Q4).
+  Today there is `ENV=TEST` (no checks) or `ENV=PREPROD` (the shared `X-Internal-Token`, which must
+  never ship in a release build). Browser `EventSource` can't send headers either.
 - **Confirm:** with D1, do INT-01..03 (ondc-api calling enrich) still apply, or are they superseded?
 - `/track` is valid only after pickup (LSP NACK `60012`), so no "route to store" from this path.
-- Still open: D2 (inline vs follow-up event), D3 (field naming), D4 (who polls `/track`), D6.
+- Still open: D6 (tests in the logistics repo). D3 settled for our side: snake_case to the frontend.
 
 ## Integration gaps (found 2026-11-04 against `../ondc-api` as it stands)
 
@@ -72,6 +77,16 @@ On low confidence, `last_seq` isn't advanced, so the next update retries with mo
 persistently unmatchable stretch would keep `road_path` omitted for the rest of the order.
 Options: advance past it after N failures (leaving a gap), or match smaller windows.
 
+### ROUTE-11 `[OPEN]` Is the logistics breadcrumb `sequence` a stable per-order counter? (2026-11-10)
+Since 2026-11-09 `sequence` is the only ordering and the idempotency boundary (`last_seq`) for
+logistics input, which has no per-point time. Neither the ONDC contract example nor
+`../ondc-logistics-api/docs/integration/post-order.md` says how LSPs number it. If an LSP renumbers
+a sliding window `1..N` on every `/on_track`, new points look like duplicates (`sequence <= last_seq`)
+and `road_path` silently stops growing. If an LSP resets the counter mid-order, the same happens.
+To do: check real `/on_track` callbacks per LSP (staging logs); if needed, detect a reset (points
+differ but max sequence <= `last_seq`) or dedupe by position. Also measure `/match` confidence on
+untimed traces vs timed ones (feeds ROUTE-03).
+
 ### ROUTE-05 `[OPEN]` Two-wheeler profile vs `car.lua`
 `car.lua` obeys one-way streets, so routes can be longer than what riders actually take. Don't
 introduce a custom profile without agreement.
@@ -84,6 +99,12 @@ service takes whatever `drop_gps` the BFF sends.
 Display-only until decided.
 
 ## Scaling notes
+
+### SCALE-02 `[DEFERRED]` Frontend SSE streams live in one process's memory (2026-11-10)
+`src/tracking/hub.ts` keeps open streams in a Map. With several osrm-bff processes, the webhook can
+land on a process that doesn't hold the order's streams, so that frontend never gets the update.
+Run **one** process until this moves to Redis pub/sub (publish per order, every process forwards to
+its own streams). Deferred: no multi-process deployment yet.
 
 ### SCALE-01 `[DEFERRED]` Concurrent updates for one order race on `route:trail:*`
 Last-writer-wins. The worst case is a duplicate match segment or a lost append that is re-matched

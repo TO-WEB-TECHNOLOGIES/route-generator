@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "url": "{{baseUrl}}/",
+  "headers": {},
+  "query": {},
+  "body": null
+}
