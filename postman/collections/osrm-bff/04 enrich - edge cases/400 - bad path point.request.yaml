@@ -23,8 +23,8 @@ scripts:
   - type: afterResponse
     language: text/javascript
     code: |-
-      // path[1] has no sequence. Note: Phase 2 of the plan will accept numeric-string sequences
-      // and missing timestamps (logistics breadcrumbs have neither); a missing sequence stays an error.
+      // path[1] has no sequence. Since 2026-11-09 numeric-string sequences and missing timestamps
+      // are accepted (logistics breadcrumbs); a missing sequence is still an error.
       pm.test('400 pointing at path[1]', () => {
         pm.response.to.have.status(400);
         pm.expect(pm.response.json().error).to.include('path[1]');

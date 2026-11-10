@@ -1,0 +1,29 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 2700
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "pm-edge-rto-{{$timestamp}}",
+      "stage": "RTO-Initiated",
+      "gps": "28.470000,77.050000",
+      "store_gps": "28.495340,77.088059",
+      "drop_gps": "28.459469,77.026635"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Return to origin (decided 2026-11-09, logistics plan 1.3): the rider heads back to the store.
+      const body = pm.response.json();
+      pm.test('200 with route_ahead to the store', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.route_ahead.to).to.eql('store');
+      });

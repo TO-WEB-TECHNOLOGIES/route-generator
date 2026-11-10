@@ -16,12 +16,18 @@ export interface RoadPathDeps {
   matchMaxPoints: number;
 }
 
-/** OSRM requires non-decreasing timestamps; drop points that go back in time. */
+/**
+ * OSRM requires non-decreasing timestamps; drop points that go back in time. Points without a
+ * timestamp are kept (nothing to compare); the client then omits `timestamps` for the window.
+ */
 export function monotonic(points: readonly TimedPoint[]): TimedPoint[] {
   const out: TimedPoint[] = [];
+  let lastTime: number | undefined;
   for (const p of points) {
-    const last = out[out.length - 1];
-    if (last && p.unixSeconds < last.unixSeconds) continue;
+    if (p.unixSeconds !== undefined) {
+      if (lastTime !== undefined && p.unixSeconds < lastTime) continue;
+      lastTime = p.unixSeconds;
+    }
     out.push(p);
   }
   return out;

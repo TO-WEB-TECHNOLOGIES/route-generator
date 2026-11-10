@@ -120,11 +120,14 @@ export function createHttpOsrmClient(opts: HttpOsrmClientOptions): OsrmClient {
 
     async match(points) {
       const coords = points.map((p) => toOsrmCoord(p.point)).join(";");
-      const timestamps = points.map((p) => p.unixSeconds).join(";");
-      const radiuses = radius !== undefined ? `&radiuses=${points.map(() => radius).join(";")}` : "";
+      // OSRM needs a timestamp for every coordinate or none. Logistics breadcrumbs have none, so
+      // send them only when all points carry one; otherwise OSRM matches on geometry alone.
+      const allTimed = points.every((p) => p.unixSeconds !== undefined);
+      const timestamps = allTimed ? `timestamps=${points.map((p) => p.unixSeconds).join(";")}&` : "";
+      const radiuses = radius !== undefined ? `radiuses=${points.map(() => radius).join(";")}&` : "";
       const url =
         `${base}/match/v1/${opts.profile}/${coords}` +
-        `?timestamps=${timestamps}${radiuses}&overview=full&geometries=polyline`;
+        `?${timestamps}${radiuses}overview=full&geometries=polyline`;
       const res = await call("match", url);
       if ("ok" in res) return res;
       const { body, done } = res;

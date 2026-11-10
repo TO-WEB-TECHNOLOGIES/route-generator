@@ -1,0 +1,8 @@
+{
+  "event": "order_status",
+  "orderId": "od261109ncr0001",
+  "state": "In-progress",
+  "fulfillmentState": "Order-picked-up",
+  "awbNo": "1227262193237777",
+  "updatedAt": "2026-11-09T09:59:30.000Z"
+}

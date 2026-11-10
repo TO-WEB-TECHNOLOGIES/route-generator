@@ -1,0 +1,16 @@
+{
+  "event": "order_tracking",
+  "orderId": "od261109ncr0001",
+  "url": "https://lsp.example/ondc/track/F1",
+  "status": "active",
+  "gps": "28.497671,77.088763",
+  "locationTimestamp": "2026-11-09T10:01:00.000Z",
+  "path": [
+    { "lat_lng": "28.495340,77.088059", "sequence": "1" },
+    { "lat_lng": "28.495470,77.087364", "sequence": "2" },
+    { "lat_lng": "28.496203,77.087864", "sequence": "3" },
+    { "lat_lng": "28.496921,77.088545", "sequence": "4" },
+    { "lat_lng": "28.497671,77.088763", "sequence": "5" }
+  ],
+  "updatedAt": "2026-11-09T10:01:02.000Z"
+}

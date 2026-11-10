@@ -14,15 +14,21 @@ additive. Never rename, retype, or make them required without a versioned contra
 
 ## Integration via ondc-logistics-api (2026-11-04)
 
-### INT-04 `[OPEN]` Caller becomes ondc-logistics-api: decisions D1–D6 pending
+### INT-04 `[OPEN]` Logistics integration: D1 and D5 decided, D2–D4, D6 and app auth pending
 Full plan and read-only findings: `task/osrm-via-logistics-api-plan.md`; order of work in parts:
 `task/phased-development-plan.md`; proposed app-facing flow (decisions Q1–Q6):
-`understanding/05-map-downloads-and-frontend-flow.md`. Blocking points:
-- Its `/on_track` breadcrumbs have no per-point timestamp (`../ondc-logistics-api/src/types/track/ondc.ts`),
-  but our enrich API requires `path[].timestamp` (plan Phase 1.1).
-- ONDC wire formats are frozen, so fields added at the logistics layer can't reach the buyer app over
-  the network (plan D1). INT-01..03 below still apply if the buyer app must show routes.
+`understanding/05-map-downloads-and-frontend-flow.md`.
+- **D1 decided 2026-11-09:** the frontend calls osrm-bff. osrm-bff requests `/track` from
+  ondc-logistics-api, enriches the result, and pushes it back to the app (Part 2.4–2.6). Not built yet.
+- **D5 decided 2026-11-09:** logistics stages mapped per plan Phase 1.3 (see `docs/CHANGELOG.md`).
+- Timestamp-less breadcrumbs: now accepted (2026-11-09). Match confidence on untimed traces is still
+  to be measured on real OSRM (ROUTE-03).
+- **New, blocking for Part 2.6:** osrm-bff becomes app-facing, so it needs app auth (understanding/05
+  Q4). Today `/v1/route` and enrich only have the shared `X-Internal-Token`, which must never ship
+  in an app. CLAUDE.md §1/§7 ("internal-only") need rewording once this is designed.
+- **Confirm:** with D1, do INT-01..03 (ondc-api calling enrich) still apply, or are they superseded?
 - `/track` is valid only after pickup (LSP NACK `60012`), so no "route to store" from this path.
+- Still open: D2 (inline vs follow-up event), D3 (field naming), D4 (who polls `/track`), D6.
 
 ## Integration gaps (found 2026-11-04 against `../ondc-api` as it stands)
 
@@ -76,10 +82,6 @@ service takes whatever `drop_gps` the BFF sends.
 
 ### ROUTE-07 `[OPEN]` `route_ahead.duration_s` and the "Arriving in" ETA
 Display-only until decided.
-
-### ROUTE-08 `[OPEN]` RTO stages
-`RTO-Initiated` / `RTO-Delivered` etc. aren't mapped (no route ahead, cache not cleared until TTL).
-Decide whether RTO routes back to the store.
 
 ## Scaling notes
 

@@ -9,11 +9,24 @@ export interface LatLng {
   readonly lng: number;
 }
 
-/** A recorded rider point with its Unix-seconds timestamp, as used by /match. */
+/**
+ * A recorded rider point, as used by /match. `unixSeconds` is optional: ONDC /on_track breadcrumbs
+ * (via ondc-logistics-api) carry no per-point time, and /match then works on geometry alone.
+ */
 export interface TimedPoint {
   readonly point: LatLng;
   readonly sequence: number;
-  readonly unixSeconds: number;
+  readonly unixSeconds?: number | undefined;
+}
+
+/**
+ * Breadcrumb sequence: a finite number, or a numeric string as ONDC tags carry it ("3").
+ * Returns null for anything else (empty string, "abc", NaN).
+ */
+export function parseSequence(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && /^\s*-?\d+(\.\d+)?\s*$/.test(value)) return Number(value);
+  return null;
 }
 
 /** Parse our "lat,lng" format. Returns null for anything malformed or out of range. */

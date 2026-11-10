@@ -11,7 +11,7 @@ _Created 2026-11-04 (initial boilerplate)._ Design spec: `.claude/skills/bff-roa
 | `src/routes/enrich.routes.ts` | Input validation (`parseEnrichBody`) -> `enrich()` |
 | `src/routes/route.routes.ts` | `GET /v1/route`: validation, coverage check, OSRM result -> 200/400/404/422/503 (added 2026-11-06) |
 | `src/routing/enrich.ts` | Orchestrator. Coverage guard, then runs route-ahead and road-path in parallel (`Promise.allSettled`). Never throws |
-| `src/routing/stage.ts` | Stage -> destination, terminal stages |
+| `src/routing/stage.ts` | Stage -> destination, terminal stages. Hyperlocal + logistics/intercity/RTO codes (2026-11-09) |
 | `src/routing/route-ahead.ts` | Cached route + 30 m / stage-change re-route check |
 | `src/routing/road-path.ts` | Incremental `/match` of the trail tail, appended to the cached polyline |
 | `src/routing/cache.ts` | Redis keys, TTL constants, `RouteCache` interface (Redis errors = miss) |
@@ -20,6 +20,10 @@ _Created 2026-11-04 (initial boilerplate)._ Design spec: `.claude/skills/bff-roa
 | `src/geo/polyline.ts` | Encode/decode precision 5, `joinPaths` |
 | `src/metrics.ts` | OSRM call outcomes + latency, served on `/metrics` |
 | `src/config.ts` | All tunables |
+| `src/logistics/types.ts` | Structural copies of ondc-logistics-api's `order_tracking` / `order_status` events + our proposed `OrderEndpoints` (2026-11-09) |
+| `src/logistics/mapper.ts` | Pure `toEnrichInput()` / `breadcrumbsToPath()`: string sequences, no timestamps; bad LSP breadcrumbs dropped, not fatal (2026-11-09) |
+| `src/routes/dev-viewer.routes.ts` | `GET /dev/route-viewer`: dev map page (Leaflet + OSM tiles) drawing `/v1/route` and enrich responses. Only when `DEV_VIEWER_ENABLED` (2026-11-09) |
+| `test/fixtures/logistics/` | Logistics-shaped test data (see its README) |
 
 Dependencies are injected (`EnrichDeps`), so `test/` runs with in-memory fakes and needs no
 Redis or OSRM. `test/osrm-failure.test.ts` drives the real HTTP client against stub servers.
@@ -49,6 +53,7 @@ All keys carry `REDIS_KEY_PREFIX` (ioredis `keyPrefix`). The cache is derived an
 | `COVERAGE_BBOX` | `76.75,28.20,77.80,28.95` | Area the map covers (`minLng,minLat,maxLng,maxLat`; `none` = off). Points outside never reach OSRM. **Must match `OSRM_BBOX`** in `ops/osrm/prep.Dockerfile` |
 | `MAX_SNAP_DISTANCE_M` | 200 | A `/route` whose `waypoints[].distance` (how far OSRM moved a point to reach a road) exceeds this is treated as no route (`SnapTooFar`) |
 | `INTERNAL_TOKEN` | empty | If set, `/internal/*` and `/v1/route` require `X-Internal-Token` |
+| `DEV_VIEWER_ENABLED` | `true` unless `NODE_ENV=production` | Serve the dev map page at `/dev/route-viewer` (2026-11-09). Keep off in production |
 
 ## Algorithm notes
 
@@ -62,12 +67,19 @@ go stale by up to 30 m of movement; acceptable while they're display-only. On OS
 field is omitted; the cached route is not resent.
 
 **Road path.** Sort `path` by `sequence`. Tail = points with `sequence > last_seq`. Window =
-last `MATCH_OVERLAP_POINTS` already-matched points + tail, with decreasing timestamps dropped,
+last `MATCH_OVERLAP_POINTS` already-matched points + tail, with decreasing timestamps dropped
+(untimed points are kept),
 capped at `MATCH_MAX_POINTS` (oldest first, so a backlog catches up over several updates). All
 matchings must reach `MATCH_MIN_CONFIDENCE`. Their geometries are decoded, joined onto the
 cached polyline (`joinPaths` drops a duplicate join point), re-encoded, and `last_seq` advances to
 the window's last sequence. If there's nothing new (a duplicate update), the cached polyline is
 resent with no OSRM call. The overlap stretch is drawn twice, on the same road.
+
+**Untimed points (2026-11-09).** OSRM `/match` takes a timestamp for every coordinate or none. The
+client sends `timestamps` only when every point in the window has one; otherwise it leaves the
+parameter out and OSRM matches on geometry alone (logistics breadcrumbs never carry time).
+`sequence` is then the only ordering. Confidence on untimed traces is still to be measured on
+real OSRM (ROUTE-03).
 
 ## Gotchas
 

@@ -3,7 +3,7 @@
  * 400 only for malformed input. Routing failures are a 200 with the fields omitted.
  */
 import { Router, type Request, type Response } from "express";
-import { parseLatLng, type LatLng, type TimedPoint } from "../geo/point.js";
+import { parseLatLng, parseSequence, type LatLng, type TimedPoint } from "../geo/point.js";
 import { enrich, type EnrichDeps, type EnrichInput } from "../routing/enrich.js";
 
 type Parsed = { ok: true; input: EnrichInput } | { ok: false; error: string };
@@ -44,11 +44,17 @@ export function parseEnrichBody(body: unknown): Parsed {
   for (const [i, raw] of rawPath.entries()) {
     const r = (raw ?? {}) as Record<string, unknown>;
     const point = parseLatLng(r.lat_lng);
-    const unixSeconds = toUnixSeconds(r.timestamp);
-    if (!point || typeof r.sequence !== "number" || unixSeconds === null) {
-      return { ok: false, error: `path[${i}] needs lat_lng ("lat,lng"), numeric sequence and timestamp` };
+    const sequence = parseSequence(r.sequence);
+    // timestamp is optional (logistics breadcrumbs have none); if sent, it must parse.
+    const hasTimestamp = r.timestamp !== undefined && r.timestamp !== null && r.timestamp !== "";
+    const unixSeconds = hasTimestamp ? toUnixSeconds(r.timestamp) : undefined;
+    if (!point || sequence === null || unixSeconds === null) {
+      return {
+        ok: false,
+        error: `path[${i}] needs lat_lng ("lat,lng") and a numeric sequence; timestamp, if sent, must be Unix seconds or ISO 8601`,
+      };
     }
-    path.push({ point, sequence: r.sequence, unixSeconds });
+    path.push({ point, sequence, unixSeconds });
   }
 
   return {

@@ -123,7 +123,7 @@ describe("road path (incremental match)", () => {
 
   it("drops points whose timestamp goes backwards", () => {
     const pts = trail(3);
-    const bad = [pts[0]!, { ...pts[1]!, unixSeconds: pts[0]!.unixSeconds - 5 }, pts[2]!];
+    const bad = [pts[0]!, { ...pts[1]!, unixSeconds: pts[0]!.unixSeconds! - 5 }, pts[2]!];
     assert.deepEqual(monotonic(bad).map((p) => p.sequence), [1, 3]);
   });
 

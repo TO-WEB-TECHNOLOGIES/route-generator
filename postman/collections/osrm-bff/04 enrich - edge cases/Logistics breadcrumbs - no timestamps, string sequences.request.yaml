@@ -1,0 +1,43 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/internal/v1/track/enrich'
+order: 2500
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "order_id": "pm-edge-logistics-{{$timestamp}}",
+      "stage": "In-transit",
+      "gps": "28.497671,77.088763",
+      "store_gps": "28.495340,77.088059",
+      "drop_gps": "28.459469,77.026635",
+      "path": [
+        { "lat_lng": "28.495340,77.088059", "sequence": "1" },
+        { "lat_lng": "28.495470,77.087364", "sequence": "2" },
+        { "lat_lng": "28.496203,77.087864", "sequence": "3" },
+        { "lat_lng": "28.496921,77.088545", "sequence": "4" },
+        { "lat_lng": "28.497671,77.088763", "sequence": "5" }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Shaped like ondc-logistics-api's order_tracking breadcrumbs (2026-11-09): string sequences,
+      // no per-point time, an intercity stage. /match then runs on geometry alone.
+      const body = pm.response.json();
+      pm.test('200, not 400: timestamps optional, string sequences accepted', () => {
+        pm.response.to.have.status(200);
+      });
+      pm.test('In-transit routes to the drop', () => {
+        pm.expect(body.route_ahead.to).to.eql('drop');
+      });
+      pm.test('road_path matched without timestamps', () => {
+        pm.expect(body.road_path).to.be.a('string').and.not.empty;
+      });
+      pm.test('drop_gps echoed', () => pm.expect(body.drop_gps).to.eql('28.459469,77.026635'));

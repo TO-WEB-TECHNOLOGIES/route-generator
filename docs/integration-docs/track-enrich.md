@@ -33,14 +33,39 @@ curl -X POST http://osrm-bff:4100/internal/v1/track/enrich \
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `order_id` | string | yes | Cache key |
-| `stage` | string | yes | ONDC fulfillment state as the BFF has it (`Agent-assigned`, `At-pickup`, `Order-picked-up`, `Out-for-delivery`, `At-delivery`, `Order-delivered`, `Cancelled`, …) |
+| `stage` | string | yes | ONDC fulfillment state as the caller has it. Hyperlocal and intercity/RTO codes are both understood (stage table below) |
 | `gps` | `"lat,lng"` | yes | Current rider position |
 | `store_gps` | `"lat,lng"` | no | Needed for the route before pickup |
 | `drop_gps` | `"lat,lng"` | no | Needed for the route after pickup; echoed back. Source: fulfillment `end.location.gps`, else the saved address |
 | `path` | array | no | The rider's recorded trail. Send the **whole** recorded path each time; the service matches only the new tail |
 | `path[].lat_lng` | `"lat,lng"` | yes | |
-| `path[].sequence` | number | yes | Increasing per order |
-| `path[].timestamp` | ISO-8601 string or Unix seconds | yes | When the point was recorded. Points going back in time are ignored |
+| `path[].sequence` | number, or numeric string (`"3"`) | yes | Increasing per order |
+| `path[].timestamp` | ISO-8601 string or Unix seconds | **no** (since 2026-11-09) | When the point was recorded. Send it when you have it: it improves matching. Points going back in time are ignored. If any point in a batch lacks one, the trail is matched on geometry alone |
+
+**Request shape change (2026-11-09, backward compatible).** ONDC `/on_track` breadcrumbs, as
+forwarded by `ondc-logistics-api`, carry string sequences and no per-point time. Every request that
+was valid before is still valid and gives the same result.
+
+| | Before 2026-11-09 | Since 2026-11-09 |
+|---|---|---|
+| `path[].timestamp` | required, else 400 | optional; if sent, it must parse, else 400 |
+| `path[].sequence` | number only | number or numeric string |
+
+```json
+"path": [
+  { "lat_lng": "28.495340,77.088059", "sequence": "1" },
+  { "lat_lng": "28.495470,77.087364", "sequence": "2" }
+]
+```
+
+### Stage table
+
+| Stage | `route_ahead.to` |
+|---|---|
+| `Agent-assigned`, `At-pickup`, `Out-for-pickup`, `RTO-Initiated` (return to the store) | `store` |
+| `Order-picked-up`, `Out-for-delivery`, `In-transit`, `At-destination-hub`, `Delivery-rescheduled` | `drop` |
+| `Pending`, `Searching-for-Agent`, `Pickup-failed`, `Pickup-rescheduled`, `At-delivery`, `Delivery-failed`, anything unknown | omitted |
+| `Order-delivered`, `Delivered`, `Cancelled`, `RTO-Delivered`, `RTO-Disposed` (final) | omitted, cache dropped |
 
 All coordinates are **`"lat,lng"`**. The service converts to OSRM's `lng,lat` internally.
 
@@ -67,7 +92,7 @@ available this update". Forward exactly what you get.
 | `road_path` | string | At least 2 path points and a confident match. Encoded, precision 5 |
 | `drop_gps` | `"lat,lng"` | Whenever `drop_gps` was sent |
 
-On `Order-delivered` / `Cancelled` the service drops its cache for the order and returns only
+On a final stage (`Order-delivered`, `Cancelled`, `RTO-Delivered`, `RTO-Disposed`) the service drops its cache for the order and returns only
 `drop_gps`.
 
 **Outside the covered area** (Delhi, Gurugram, Noida, Ghaziabad; updated 2026-11-06): when the
