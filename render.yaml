@@ -13,12 +13,12 @@ services:
     name: osrm-bff
     runtime: image
     image:
-      url: ghcr.io/REPLACE_WITH_YOUR_GITHUB_USER/osrm-bff-render:2026-11-10
+      url: ghcr.io/tushargupta012735/osrm-bff-render:2026-11-10
       # Private GHCR package: add a registry credential in Render (Settings -> Registry Credentials,
       # GitHub token with read:packages) and reference it:
-      # creds:
-      #   fromRegistryCreds:
-      #     name: ghcr
+      creds:
+        fromRegistryCreds:
+          name: ghcr
     plan: free
     region: singapore          # closest to India; Key Value below must be in the same region
     healthCheckPath: /health
