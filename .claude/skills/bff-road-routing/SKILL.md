@@ -55,6 +55,11 @@ Pick the destination from the order stage:
 | Order-picked-up, Out-for-delivery | buyer drop GPS | `"drop"` |
 | At-delivery, delivered, cancelled | none: stop routing, omit `route_ahead` | — |
 
+In osrm-bff the table also covers the ondc-logistics-api states (decided 2026-11-09):
+`Out-for-pickup` and `RTO-Initiated` go to the store; `In-transit`, `At-destination-hub` and
+`Delivery-rescheduled` go to the drop; `RTO-Delivered` / `RTO-Disposed` are terminal. The full table
+is in `src/routing/stage.ts` and `docs/integration-docs/track-enrich.md`.
+
 Drop GPS comes from the fulfillment's `end.location.gps`, or the saved address's lat/lng. Send it as `drop_gps` too; this is what fixes the missing home marker on orders opened from another device.
 
 Call:
@@ -77,7 +82,9 @@ Send the rider's recorded points (the existing `path`) with their timestamps to 
 GET http://osrm:5000/match/v1/driving/{lng,lat;lng,lat;...}?timestamps={t1;t2;...}&overview=full&geometries=polyline
 ```
 
-Timestamps are Unix seconds and must not decrease. Match only the new tail on each update: keep the already-matched polyline and last matched sequence in Redis, match from a point or two before that sequence (so the pieces join), and append. Don't re-match the whole trail each time; it grows with the order and gets slower.
+Timestamps are Unix seconds and must not decrease. ONDC breadcrumbs from the logistics API carry
+none. osrm-bff then omits `timestamps` entirely (OSRM wants one per point or none) and matches on
+geometry alone, ordered by `sequence`. Match only the new tail on each update: keep the already-matched polyline and last matched sequence in Redis, match from a point or two before that sequence (so the pieces join), and append. Don't re-match the whole trail each time; it grows with the order and gets slower.
 
 If OSRM returns no matching or a low `confidence`, leave `road_path` out for that update rather than sending a bad line. The threshold isn't fixed in the design yet; make it a config value and note what you chose.
 

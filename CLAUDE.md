@@ -10,7 +10,11 @@ app's backend). It wraps a **self-hosted OSRM server** and turns each rider GPS 
 - `drop_gps`: the buyer's delivery point (fixes the missing home marker).
 
 The BFF calls this service once per GPS update and merges the result into `on_track` and
-`GET /api/v1/track/:order_id`. **Phones never call a routing server.**
+`GET /api/v1/track/:order_id`. **Phones never call a routing server** (OSRM or any public routing API).
+
+**Decided 2026-11-09 (D1, not built yet):** the frontend will call this service, which requests
+`/track` from `ondc-logistics-api`, enriches it, and pushes the result back. Until app auth is
+designed (`docs/ARCHITECTURE_REVIEW.md` INT-04), every route stays internal-only.
 
 ```
 seller GPS -> ondc-api (BFF) --POST /internal/v1/track/enrich--> osrm-bff --> OSRM :5000 (private)
@@ -103,11 +107,12 @@ If a requested change needs a contract change, stop and tell the user.
 
 1. **Route ahead.** Stage -> destination (`src/routing/stage.ts`):
    Agent-assigned / At-pickup -> store; Order-picked-up / Out-for-delivery -> drop;
-   At-delivery / delivered / cancelled -> none (omit `route_ahead`).
+   At-delivery / delivered / cancelled -> none (omit `route_ahead`). Logistics/intercity/RTO codes
+   are mapped too (`RTO-Initiated` -> store); the full table is in `docs/integration-docs/track-enrich.md`.
    Re-route only if the rider moved > `REROUTE_THRESHOLD_M` (30 m, haversine) from the point the
    cached route was built from, or the stage changed. Otherwise resend the cached route.
 2. **Trail.** Match only the **new tail** of `path` with OSRM `/match` (timestamps in Unix
-   seconds, non-decreasing), starting `MATCH_OVERLAP_POINTS` before the last matched sequence, and
+   seconds, non-decreasing, when every point in the window has one; otherwise sent without them), starting `MATCH_OVERLAP_POINTS` before the last matched sequence, and
    append to the cached polyline. Never re-match the whole trail.
 3. Steps 1 and 2 run in parallel. Each has its own OSRM timeout.
 

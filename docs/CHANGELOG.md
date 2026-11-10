@@ -18,6 +18,11 @@ problems live in `docs/ARCHITECTURE_REVIEW.md`, not here.
 | 2026-11-06 | FIX | `REDIS_URL` default `localhost` → `127.0.0.1`: on Windows it resolved to IPv6 `::1` and Redis was refused (Docker listens on IPv4 only). |
 | 2026-11-06 | TEST | Postman v3 collection `postman/collections/osrm-bff` (28 requests, 98 assertions) + `osrm-bff local` environment; `npm run test:api`. |
 | 2026-11-09 | API, TEST | `GET /` answers like `/health`; Postman env file renamed to `*.environment.yaml` (Postman didn't load the old name), collection variables + a check that stops requests sent to OSRM's port 5000 (`InvalidUrl`). |
+| 2026-11-09 | API | Enrich accepts logistics breadcrumbs: `path[].timestamp` optional (`/match` then sent without `timestamps`), `sequence` may be a numeric string. Backward compatible. |
+| 2026-11-09 | ROUTE-08 | Decided per logistics plan 1.3: `RTO-Initiated` routes to the store; `RTO-Delivered` / `RTO-Disposed` are terminal; intercity stages (`Out-for-pickup`, `In-transit`, …) mapped. |
+| 2026-11-09 | D1 | Decided: the frontend calls osrm-bff, which requests track from ondc-logistics-api and pushes the result back (to build in Part 2.4–2.6). |
+| 2026-11-09 | TEST | Logistics fixtures + pure mapper `src/logistics/` (`toEnrichInput`), `test/logistics.test.ts`. |
+| 2026-11-09 | DEV | `GET /dev/route-viewer`: dev map page drawing `/v1/route` and enrich responses (`DEV_VIEWER_ENABLED`, off in production). |
 
 ---
 
