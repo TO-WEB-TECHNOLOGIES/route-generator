@@ -20,6 +20,8 @@ _Created 2026-11-04 (initial boilerplate)._ Design spec: `.claude/skills/bff-roa
 | `src/geo/polyline.ts` | Encode/decode precision 5, `joinPaths` |
 | `src/metrics.ts` | OSRM call outcomes + latency, served on `/metrics` |
 | `src/config.ts` | All tunables |
+| `src/keepalive.ts` | Self-ping of our public `/health` to stay awake on free hosts (2026-11-10) |
+| `ops/render/` | Render free-tier image: one container with OSRM on 127.0.0.1 + osrm-bff (`docs/deployment/render.md`) |
 | `src/logistics/types.ts` | Structural copies of ondc-logistics-api's `order_tracking` / `order_status` events + our proposed `OrderEndpoints` (2026-11-09) |
 | `src/logistics/mapper.ts` | Pure `toEnrichInput()` / `breadcrumbsToPath()`: string sequences, no timestamps; bad LSP breadcrumbs dropped, not fatal (2026-11-09) |
 | `src/routes/track.routes.ts` | Frontend: `POST /v1/track` (forward to logistics), `GET /v1/orders/:orderId/track` (snapshot), `.../track/events` (SSE) (2026-11-10) |
@@ -66,6 +68,8 @@ All keys carry `REDIS_KEY_PREFIX` (ioredis `keyPrefix`). The cache is derived an
 | `LOGISTICS_TIMEOUT_MS` | 5000 | Per call to the logistics API (`/logistics/track`, `.../status`) |
 | `ENRICH_DEADLINE_MS` | 1200 | Max time the stage lookup + enrich may hold back a `track_update` (> `OSRM_TIMEOUT_MS`, so a normal OSRM failure still fits) |
 | `SSE_KEEPALIVE_MS` | 25000 | Keep-alive comment interval on frontend streams |
+| `KEEPALIVE_URL` | `RENDER_EXTERNAL_URL` + `/health` on Render, else off | Self-ping target so a free host doesn't sleep the service (2026-11-10). `none` = off. Must be the public URL |
+| `KEEPALIVE_INTERVAL_MS` | 600000 | Ping interval (under Render's ~15 min idle limit) |
 
 ## Algorithm notes
 

@@ -65,7 +65,10 @@ yet. Revisit with a before/after metric once real traffic exists (CLAUDE.local.m
 ## Open design questions (from the skill)
 
 ### ROUTE-02 `[OPEN]` Where OSRM runs, and who owns the weekly refresh
-Assumed: same VPC as the BFF, private port 5000.
+Assumed: same VPC as the BFF, private port 5000. **2026-11-10, demo/QA:** Render free tier, OSRM
+inside the osrm-bff container on 127.0.0.1 (`docs/deployment/render.md`). Production hosting
+(Render paid private service, or one EC2 `t3.small` with compose) and the refresh owner are still
+open.
 
 ### ROUTE-03 `[OPEN]` `MATCH_MIN_CONFIDENCE` value
 Set to 0.5 as a reversible default. Tune from real traces: log the confidence distribution on

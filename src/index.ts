@@ -2,6 +2,7 @@ import { Redis } from "ioredis";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./logger.js";
+import { startKeepalive } from "./keepalive.js";
 import { createHttpLogisticsClient } from "./logistics/client.js";
 import { setOpenStreamsGauge } from "./metrics.js";
 import { createHttpOsrmClient } from "./osrm/client.js";
@@ -56,6 +57,7 @@ const app = createApp({
   },
 });
 
+let stopKeepalive = () => {};
 const server = app.listen(config.port, () => {
   logger.info("server", "listening", {
     env: config.env,
@@ -65,11 +67,15 @@ const server = app.listen(config.port, () => {
     osrm: config.osrmBaseUrl,
     coverage: config.coverage ?? "none",
   });
+  if (config.keepaliveUrl) {
+    stopKeepalive = startKeepalive({ url: config.keepaliveUrl, intervalMs: config.keepaliveIntervalMs, timeoutMs: 10_000 });
+  }
   if (config.devViewerEnabled) logger.info("server", "dev route viewer", { url: `http://127.0.0.1:${config.port}/dev/route-viewer` });
 });
 
 function shutdown(signal: string) {
   logger.info("server", "shutting down", { signal });
+  stopKeepalive();
   hub.closeAll(); // open SSE streams would keep server.close() waiting
   server.close(() => {
     redis.quit().finally(() => process.exit(0));

@@ -1,0 +1,44 @@
+# Render Blueprint: osrm-bff on the FREE tier (demo / QA, NCR only). Guide: docs/deployment/render.md
+#
+# One free web service runs osrm-bff AND OSRM in one container (ops/render/Dockerfile); OSRM listens
+# on 127.0.0.1 only. The image, with the NCR map baked in, is built on your machine with
+# ops/render/build-image.sh and pushed to a registry; Render only pulls it (no build here).
+#
+# Before syncing: replace the image URL below with the tag you pushed. Image-backed services don't
+# redeploy on their own: after pushing a new tag, update `url` (or the dashboard) and deploy.
+# Render validates this file when you create the Blueprint; fix any field it reports.
+
+services:
+  - type: web
+    name: osrm-bff
+    runtime: image
+    image:
+      url: ghcr.io/REPLACE_WITH_YOUR_GITHUB_USER/osrm-bff-render:2026-11-10
+      # Private GHCR package: add a registry credential in Render (Settings -> Registry Credentials,
+      # GitHub token with read:packages) and reference it:
+      # creds:
+      #   fromRegistryCreds:
+      #     name: ghcr
+    plan: free
+    region: singapore          # closest to India; Key Value below must be in the same region
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: PREPROD         # token required on /v1/* and /internal/*
+      - key: INTERNAL_TOKEN
+        generateValue: true    # copy it from the dashboard for the logistics API and QA builds
+      - key: LOGISTICS_BASE_URL
+        sync: false            # asked once at Blueprint creation, e.g. https://<logistics-host>
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: osrm-bff-cache
+          property: connectionString
+      # KEEPALIVE_URL is not needed: on Render it defaults to RENDER_EXTERNAL_URL + /health.
+
+  - type: keyvalue
+    name: osrm-bff-cache
+    plan: free                 # 25 MB, no persistence: fine, the cache is disposable
+    region: singapore
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []            # no external access; internal connections only

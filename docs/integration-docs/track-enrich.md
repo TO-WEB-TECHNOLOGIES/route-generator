@@ -101,6 +101,10 @@ rider or destination is outside it, `route_ahead` is omitted, and trail points o
 ignored for `road_path`. Previously such orders could get an absurd route snapped to the edge of
 the map. Same response shape; the fields are just absent.
 
+**Timeout budget on the Render free deployment (2026-11-10):** that image runs OSRM at 0.1 CPU
+with a 2.5 s OSRM timeout, so a long route can take up to ~2.5 s. Use a ~3 s client timeout there,
+or accept that the routing fields are sometimes omitted. Other deployments keep the 1 s budget.
+
 ## Status codes the caller must handle
 
 | Code | Meaning | BFF action |

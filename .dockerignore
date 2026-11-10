@@ -1,5 +1,16 @@
+# Build context for the root Dockerfile and ops/render/Dockerfile (both use the repo root).
+# Keeps secrets and bulky local data out of the context. ops/render/map/ must stay included.
+.env
+.env.*
+!.env.example
 node_modules
 dist
-.env
-ops/data
+.git
+logs
+*.log
 ops/maps
+ops/data
+understanding
+task
+push.txt
+token-generator.txt

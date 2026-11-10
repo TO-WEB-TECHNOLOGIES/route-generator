@@ -88,6 +88,12 @@ export interface Config {
   enrichDeadlineMs: number;
   /** Interval of the SSE keep-alive comment, so proxies don't drop an idle stream. */
   sseKeepaliveMs: number;
+  /**
+   * Our own public /health URL, pinged so a free host doesn't put the service to sleep
+   * (src/keepalive.ts). Default: RENDER_EXTERNAL_URL + "/health" when Render sets it, else off.
+   */
+  keepaliveUrl: string | undefined;
+  keepaliveIntervalMs: number;
 }
 
 /** ENV: unset = PREPROD (fail closed). */
@@ -108,6 +114,9 @@ export function loadConfig(): Config {
   if (env === "PREPROD" && token === "") {
     throw new Error("ENV=PREPROD requires INTERNAL_TOKEN (set ENV=TEST for local development without a token)");
   }
+  // KEEPALIVE_URL: unset = Render's own public URL if running on Render, else off; "none" = off.
+  const renderUrl = str("RENDER_EXTERNAL_URL", "").replace(/\/+$/, "");
+  const keepaliveRaw = str("KEEPALIVE_URL", renderUrl ? `${renderUrl}/health` : "none");
   const logisticsBaseUrl = str("LOGISTICS_BASE_URL", "").replace(/\/+$/, "");
   // COVERAGE_BBOX: unset = default boxes; "none" = disable the check.
   const bboxRaw = str("COVERAGE_BBOX", DEFAULT_COVERAGE_BBOX);
@@ -139,5 +148,8 @@ export function loadConfig(): Config {
     logisticsTimeoutMs: num("LOGISTICS_TIMEOUT_MS", 5000),
     enrichDeadlineMs: num("ENRICH_DEADLINE_MS", 1200),
     sseKeepaliveMs: num("SSE_KEEPALIVE_MS", 25000),
+    keepaliveUrl: keepaliveRaw === "none" ? undefined : keepaliveRaw,
+    // 10 min: under Render's ~15 min idle limit, with room for one failed ping.
+    keepaliveIntervalMs: num("KEEPALIVE_INTERVAL_MS", 10 * 60 * 1000),
   };
 }

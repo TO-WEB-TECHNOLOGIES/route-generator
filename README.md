@@ -27,6 +27,11 @@ npm run osrm:stop   # stop both (map data is kept)
 npm run smoke -- http://127.0.0.1:5000   # 127.0.0.1, not localhost: on Windows localhost resolves to IPv6
 ```
 
+## Deploying
+
+- Render free tier (demo, NCR only, one container): `docs/deployment/render.md`, `render.yaml`.
+- OSRM container, map build and refresh: `docs/deployment/osrm.md`.
+
 ## Endpoints
 
 | Route | Purpose |

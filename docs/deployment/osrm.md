@@ -46,6 +46,8 @@ triggers the rebuild automatically; `OSRM_FORCE_REBUILD=1` forces one.
 **Disk/RAM with Bengaluru (2026-11-10):** not measured yet. Record the build's peak RAM, the
 `ncr.osrm*` size and the `osrm-routed` RSS here after the first two-region build.
 
+For Render's free tier (one container, OSRM baked in), see `docs/deployment/render.md`.
+
 ## Images: two steps, two containers (changed 2026-11-05)
 
 The official OSRM image is based on **Debian 11 (bullseye), which is end of life**. Its security
