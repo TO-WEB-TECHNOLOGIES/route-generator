@@ -3,19 +3,25 @@ import { logger } from "./logger.js";
 import { metricsSnapshot } from "./metrics.js";
 import { devViewerRouter } from "./routes/dev-viewer.routes.js";
 import { enrichRouter } from "./routes/enrich.routes.js";
+import { logisticsWebhookRouter } from "./routes/logistics-webhook.routes.js";
 import { routeRouter } from "./routes/route.routes.js";
+import { trackRouter } from "./routes/track.routes.js";
 import type { EnrichDeps } from "./routing/enrich.js";
+import type { TrackDeps } from "./tracking/service.js";
 
 export interface AppOptions {
   deps: EnrichDeps;
   internalToken?: string | undefined;
   /** Serve the dev map page at /dev/route-viewer (src/routes/dev-viewer.routes.ts). */
   devViewer?: boolean | undefined;
+  /** Live tracking via ondc-logistics-api (/v1/track*, the on_track webhook). Unset = not mounted. */
+  track?: Omit<TrackDeps, "enrich"> | undefined;
 }
 
 /**
- * Shared-secret guard (X-Internal-Token). Pass-through when no token is configured.
- * Used for /internal/* and, until app login is decided (Q4), for /v1/route too.
+ * Shared-secret guard (X-Internal-Token). Pass-through when no token is configured, which is
+ * always the case with ENV=TEST (src/config.ts). Used for /internal/* and, until app login is
+ * decided (Q4), for /v1/route and /v1/track* too.
  */
 function requireInternalToken(token: string | undefined): RequestHandler {
   return (req, res, next) => {
@@ -27,7 +33,7 @@ function requireInternalToken(token: string | undefined): RequestHandler {
   };
 }
 
-export function createApp({ deps, internalToken, devViewer = false }: AppOptions) {
+export function createApp({ deps, internalToken, devViewer = false, track }: AppOptions) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "256kb" }));
@@ -46,10 +52,12 @@ export function createApp({ deps, internalToken, devViewer = false }: AppOptions
   if (devViewer) app.use("/dev/route-viewer", devViewerRouter());
 
   app.use("/v1/route", guard, routeRouter({ osrm: deps.osrm, coverage: deps.coverage }));
+  if (track) app.use("/v1", guard, trackRouter(track));
 
   const internal = express.Router();
   internal.use(guard);
   internal.use("/v1/track/enrich", enrichRouter(deps));
+  if (track) internal.use("/v1/logistics/on_track", logisticsWebhookRouter({ ...track, enrich: deps }));
   app.use("/internal", internal);
 
   app.use((_req, res) => {

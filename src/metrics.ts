@@ -30,6 +30,36 @@ export function recordOsrm(op: OsrmOp, outcome: OsrmOutcome, latencyMs: number):
   if (outcome === "timeout" || outcome === "error") s.lastErrorAt = new Date().toISOString();
 }
 
+// ---- ondc-logistics-api calls and the track push (2026-11-10) ----
+export type LogisticsOp = "track" | "status";
+/** rejected = the logistics API answered non-2xx (e.g. 60012 before pickup). */
+export type LogisticsOutcome = "ok" | "rejected" | "timeout" | "error";
+
+const freshLogistics = () => ({
+  outcomes: { ok: 0, rejected: 0, timeout: 0, error: 0 } as Record<LogisticsOutcome, number>,
+  latencyMsSum: 0,
+  latencyMsMax: 0,
+});
+let logistics: Record<LogisticsOp, ReturnType<typeof freshLogistics>> = { track: freshLogistics(), status: freshLogistics() };
+
+export function recordLogistics(op: LogisticsOp, outcome: LogisticsOutcome, latencyMs: number): void {
+  const s = logistics[op];
+  s.outcomes[outcome] += 1;
+  s.latencyMsSum += latencyMs;
+  s.latencyMsMax = Math.max(s.latencyMsMax, latencyMs);
+}
+
+const freshTrack = () => ({ webhooks: 0, updates_pushed: 0, routing_deadline_hit: 0 });
+let track = freshTrack();
+export function recordTrack(event: keyof ReturnType<typeof freshTrack>): void {
+  track[event] += 1;
+}
+/** Set by the stream hub so /metrics can report open frontend streams. */
+let openStreams: () => number = () => 0;
+export function setOpenStreamsGauge(fn: () => number): void {
+  openStreams = fn;
+}
+
 export function metricsSnapshot() {
   const view = (s: OpStats) => {
     const calls = Object.values(s.outcomes).reduce((a, b) => a + b, 0);
@@ -41,11 +71,26 @@ export function metricsSnapshot() {
       last_error_at: s.lastErrorAt,
     };
   };
-  return { osrm: { route: view(stats.route), match: view(stats.match) } };
+  const lview = (s: ReturnType<typeof freshLogistics>) => {
+    const calls = Object.values(s.outcomes).reduce((a, b) => a + b, 0);
+    return {
+      calls,
+      outcomes: { ...s.outcomes },
+      latency_ms_avg: calls ? Math.round(s.latencyMsSum / calls) : 0,
+      latency_ms_max: Math.round(s.latencyMsMax),
+    };
+  };
+  return {
+    osrm: { route: view(stats.route), match: view(stats.match) },
+    logistics: { track: lview(logistics.track), status: lview(logistics.status) },
+    track: { ...track, open_streams: openStreams() },
+  };
 }
 
 /** Test helper. */
 export function resetMetrics(): void {
   stats.route = fresh();
   stats.match = fresh();
+  logistics = { track: freshLogistics(), status: freshLogistics() };
+  track = freshTrack();
 }

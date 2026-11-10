@@ -36,3 +36,24 @@ export interface OrderEndpoints {
   startGps?: string | undefined;
   endGps?: string | undefined;
 }
+
+/**
+ * Body of POST /internal/v1/logistics/on_track: the `order_tracking` event ondc-logistics-api
+ * already builds, plus three fields we asked for (LOGISTICS_API_CHANGES.md). Extra fields it sends
+ * (tags, config, trackedOrderId, fulfillmentId, …) are ignored.
+ */
+export interface LogisticsOnTrackWebhook {
+  orderId: string;
+  gps: string;
+  transactionId?: string | undefined;
+  url?: string | undefined;
+  status?: string | undefined;
+  locationTimestamp?: string | undefined;
+  path?: LogisticsTrackingEvent["path"];
+  updatedAt?: string | undefined;
+  /** Requested addition. Missing = fall back to GET /logistics/orders/:orderId/status. */
+  fulfillmentState?: string | undefined;
+  /** Requested additions: store and home GPS ("lat,lng"). Missing = no route ahead / home marker. */
+  startGps?: string | undefined;
+  endGps?: string | undefined;
+}

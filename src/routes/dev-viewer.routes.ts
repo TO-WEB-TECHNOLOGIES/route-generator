@@ -1,6 +1,6 @@
 /**
  * GET /dev/route-viewer — a local DEV tool that draws /v1/route and /internal/v1/track/enrich
- * responses on a map, the way the app should (understanding/06): orange route with a navy border,
+ * responses, and plays the frontend's live-tracking flow (/v1/track + SSE) on a map, the way the app should (understanding/06): orange route with a navy border,
  * navy trail, markers, dashed straight-line fallback on errors.
  *
  * Off when NODE_ENV=production unless DEV_VIEWER_ENABLED says otherwise (src/config.ts). The page
@@ -75,7 +75,8 @@ const PAGE = `<!doctype html>
 
   <div class="tabs" style="margin-top:12px">
     <button id="tab-route" class="on" type="button">Route (2 points)</button>
-    <button id="tab-enrich" type="button">Enrich (GPS update)</button>
+    <button id="tab-enrich" type="button">Enrich</button>
+    <button id="tab-live" type="button">Live order</button>
   </div>
 
   <div id="pane-route">
@@ -90,6 +91,18 @@ const PAGE = `<!doctype html>
     <label for="body">request body</label>
     <textarea id="body" spellcheck="false"></textarea>
     <button class="go" id="go-enrich" type="button">Send and draw</button>
+  </div>
+
+  <div id="pane-live" class="hidden">
+    <p class="hint">The frontend flow: opens the SSE stream <code>/v1/orders/:orderId/track/events</code>, then
+      sends <code>POST /v1/track</code> every 15 s. Until logistics forwards <code>/on_track</code>, press
+      "Simulate on_track" to play the logistics side (each press = the rider's next point; after the last, delivered).
+      The stream needs <code>ENV=TEST</code>: the browser's EventSource can't send the token header.</p>
+    <label for="order">orderId (the logistics order id)</label><input id="order" value="od-dev-1">
+    <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="poll" checked style="width:auto"> POST /v1/track every 15 s</label>
+    <button class="go" id="go-live" type="button">Start (stream + /v1/track)</button>
+    <button class="go" id="stop-live" type="button" style="background:var(--navy)">Stop</button>
+    <button class="go" id="sim" type="button" style="background:var(--ok)">Simulate on_track (next point)</button>
   </div>
 
   <div class="legend">
@@ -235,6 +248,79 @@ const PAGE = `<!doctype html>
     } catch (e) { fail(e); }
   }
 
+  // ---- Live order: SSE stream + POST /v1/track, like the frontend ----
+  var es = null, pollTimer = null, simStep = 0;
+  var SIM_PTS = ["28.495340,77.088059", "28.495470,77.087364", "28.496203,77.087864", "28.496921,77.088545", "28.497671,77.088763"];
+  var SIM_HOME = "28.459469,77.026635";
+  function log(line) { $("out").textContent = (line + "\\n\\n" + $("out").textContent).slice(0, 20000); }
+  function drawUpdate(u) {
+    layer.clearLayers();
+    var rider = pt(u.gps), store = pt(u.store_gps), home = pt(u.drop_gps), all = [rider, store, home];
+    var parts = ["stage " + (u.stage || "unknown")];
+    if (u.road_path) {
+      var trail = decode(u.road_path);
+      L.polyline(trail, { color: "#1b2a49", weight: 5 }).addTo(layer);
+      all = all.concat(trail); parts.push("trail " + trail.length + " pts");
+    } else parts.push("no road_path");
+    if (u.route_ahead) {
+      var ahead = decode(u.route_ahead.polyline);
+      routeLine(ahead); all = all.concat(ahead);
+      parts.push("to " + u.route_ahead.to + ": " + km(u.route_ahead.distance_m) + " · " + min(u.route_ahead.duration_s));
+    } else {
+      fallback(rider, home);
+      parts.push("no route_ahead");
+    }
+    marker(store, "#067647", "store"); marker(home, "#ff7a00", "home (drop_gps)"); marker(rider, "#1b2a49", "rider");
+    $("summary").textContent = parts.join(" · ");
+    fit(all);
+  }
+  async function requestTrack() {
+    var id = $("order").value.trim();
+    try {
+      var t0 = performance.now();
+      var res = await fetch("/v1/track", { method: "POST", headers: headers(true), body: JSON.stringify({ orderId: id }) });
+      var text = await res.text();
+      $("status").className = "status " + (res.ok ? "ok" : "err");
+      $("status").textContent = "POST /v1/track: " + res.status + " (" + Math.round(performance.now() - t0) + " ms)";
+      log("POST /v1/track -> " + res.status + " " + text);
+    } catch (e) { fail(e); }
+  }
+  function stopLive() {
+    if (es) { es.close(); es = null; }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+  function startLive() {
+    stopLive(); simStep = 0; layer.clearLayers(); $("out").textContent = "";
+    var id = $("order").value.trim();
+    es = new EventSource("/v1/orders/" + encodeURIComponent(id) + "/track/events");
+    es.onopen = function () { log("stream open"); };
+    es.addEventListener("track_update", function (e) {
+      var u = JSON.parse(e.data);
+      drawUpdate(u);
+      log("track_update " + new Date().toLocaleTimeString() + "\\n" + JSON.stringify(u, null, 2));
+    });
+    es.addEventListener("track_closed", function (e) { log("track_closed " + e.data + " (stream ended)"); stopLive(); });
+    es.onerror = function () { log("stream error: the browser retries in 3 s (401 = needs ENV=TEST)"); };
+    requestTrack();
+    if ($("poll").checked) pollTimer = setInterval(requestTrack, 15000);
+  }
+  async function simulate() {
+    var id = $("order").value.trim();
+    simStep = Math.min(simStep + 1, SIM_PTS.length + 1);
+    var n = Math.min(simStep, SIM_PTS.length), now = new Date().toISOString();
+    var body = {
+      event: "order_tracking", orderId: id, status: "active", gps: SIM_PTS[n - 1],
+      locationTimestamp: now, updatedAt: now,
+      path: SIM_PTS.slice(0, n).map(function (p, i) { return { lat_lng: p, sequence: String(i + 1) }; }),
+      fulfillmentState: simStep > SIM_PTS.length ? "Order-delivered" : "Order-picked-up",
+      startGps: SIM_PTS[0], endGps: SIM_HOME
+    };
+    try {
+      var res = await fetch("/internal/v1/logistics/on_track", { method: "POST", headers: headers(true), body: JSON.stringify(body) });
+      log("simulated on_track #" + simStep + " (" + body.fulfillmentState + ") -> " + res.status);
+    } catch (e) { fail(e); }
+  }
+
   var next = "from";
   map.on("click", function (e) {
     if ($("pane-route").classList.contains("hidden")) return;
@@ -243,15 +329,19 @@ const PAGE = `<!doctype html>
     next = next === "from" ? "to" : "from";
   });
   function tab(which) {
-    $("tab-route").classList.toggle("on", which === "route");
-    $("tab-enrich").classList.toggle("on", which === "enrich");
-    $("pane-route").classList.toggle("hidden", which !== "route");
-    $("pane-enrich").classList.toggle("hidden", which !== "enrich");
+    ["route", "enrich", "live"].forEach(function (t) {
+      $("tab-" + t).classList.toggle("on", which === t);
+      $("pane-" + t).classList.toggle("hidden", which !== t);
+    });
   }
   $("tab-route").onclick = function () { tab("route"); };
   $("tab-enrich").onclick = function () { tab("enrich"); };
+  $("tab-live").onclick = function () { tab("live"); };
   $("go-route").onclick = drawRoute;
   $("go-enrich").onclick = drawEnrich;
+  $("go-live").onclick = startLive;
+  $("stop-live").onclick = stopLive;
+  $("sim").onclick = simulate;
 })();
 </script>
 </body>
