@@ -81,6 +81,24 @@ export function isInBbox(p: LatLng, b: Bbox): boolean {
   return p.lat >= b.minLat && p.lat <= b.maxLat && p.lng >= b.minLng && p.lng <= b.maxLng;
 }
 
+/** The covered area: one box per region (NCR, Bengaluru, …). Separate road networks in one map. */
+export type Coverage = readonly Bbox[];
+
+/**
+ * Parse "box;box;…" (each "minLng,minLat,maxLng,maxLat"), same syntax as OSRM_BBOX in
+ * ops/osrm/prep.Dockerfile. A single box is still valid. Returns null if any box is malformed.
+ */
+export function parseCoverage(value: unknown): Coverage | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const boxes = value.split(";").map((s) => parseBbox(s.trim()));
+  return boxes.every((b): b is Bbox => b !== null) ? boxes : null;
+}
+
+/** Inside any of the boxes? Lat/lng swaps still fall outside every Indian-city box. */
+export function isCovered(p: LatLng, coverage: Coverage): boolean {
+  return coverage.some((b) => isInBbox(p, b));
+}
+
 const EARTH_RADIUS_M = 6_371_008.8;
 
 export function haversineMeters(a: LatLng, b: LatLng): number {

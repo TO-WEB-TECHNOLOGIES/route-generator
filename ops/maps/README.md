@@ -5,7 +5,10 @@ this folder except this README is git-ignored.
 
 ## Which files
 
-Any one of these sets, covering Delhi, Gurugram, Noida and Ghaziabad (details and links:
+**Since 2026-11-10 the map covers Delhi NCR and Bengaluru, so put files for BOTH here.** When this
+folder has any `.pbf`, nothing is downloaded: a Bengaluru file alone would drop NCR from the map.
+
+For NCR, any one of these sets, covering Delhi, Gurugram, Noida and Ghaziabad (details and links:
 `understanding/05-map-downloads-and-frontend-flow.md`, Part A):
 
 | Option | Files to put here |
@@ -14,7 +17,10 @@ Any one of these sets, covering Delhi, Gurugram, Noida and Ghaziabad (details an
 | Geofabrik zones | `northern-zone-latest.osm.pbf` **and** `central-zone-latest.osm.pbf` |
 | openstreetmap.fr states | `national_capital_territory_of_delhi-latest.osm.pbf`, `haryana-latest.osm.pbf`, `uttar_pradesh-latest.osm.pbf` |
 
-Use **one** set, not a mix: every `.pbf` file here is merged in.
+Use **one** NCR set, not a mix: every `.pbf` file here is merged in.
+
+For Bengaluru, one of: a BBBike custom extract around Bengaluru, `karnataka-latest.osm.pbf`
+(openstreetmap.fr), or Geofabrik's `southern-zone-latest.osm.pbf` (bigger).
 
 ## Then
 
@@ -22,7 +28,7 @@ Use **one** set, not a mix: every `.pbf` file here is merged in.
 docker compose -f ops/docker-compose.yml up
 ```
 
-The prep step checks that each file is complete, cuts it to the NCR box, merges, and the OSRM
+The prep step checks that each file is complete, cuts it to the NCR and Bengaluru boxes, merges, and the OSRM
 container builds and serves the map. Your files here are never changed or deleted.
 
 - **Replacing or adding a file** triggers a rebuild automatically on the next `up`.

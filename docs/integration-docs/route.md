@@ -4,7 +4,8 @@ _Created 2026-11-06 (Part 1)._
 
 ## Purpose
 
-Road route between two points in the covered area (Delhi, Gurugram, Noida, Ghaziabad), ready to
+Road route between two points in the covered area (Delhi NCR: Delhi, Gurugram, Noida, Ghaziabad;
+Bengaluru since 2026-11-10), ready to
 draw on a map: e.g. a store → home preview before a rider is assigned.
 
 **Access (for now):** internal only. If the service has `INTERNAL_TOKEN` set, send it as
@@ -54,7 +55,7 @@ to a straight line.
 | 400 | `INVALID_POINT` | `from`/`to` missing or not `"lat,lng"` |
 | 401 | — (`{ "error": "unauthorized" }`) | Missing/wrong `X-Internal-Token` |
 | 422 | `OUT_OF_COVERAGE` | A point is outside the covered area. Also catches most lat/lng swaps |
-| 404 | `NO_ROUTE` | No road route, or a point is more than 200 m from any road |
+| 404 | `NO_ROUTE` | No road route, a point is more than 200 m from any road, or one point is in NCR and the other in Bengaluru (both covered, but not connected in the map; 2026-11-10) |
 | 503 | `ROUTING_UNAVAILABLE` | The routing engine is down or slow. Answered within about 1 s; retry later |
 
 ## Timeout budget

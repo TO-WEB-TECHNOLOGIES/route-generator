@@ -2,8 +2,12 @@ import { Redis } from "ioredis";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./logger.js";
+import { createHttpLogisticsClient } from "./logistics/client.js";
+import { setOpenStreamsGauge } from "./metrics.js";
 import { createHttpOsrmClient } from "./osrm/client.js";
 import { createRedisRouteCache } from "./routing/cache.js";
+import { TrackStreamHub } from "./tracking/hub.js";
+import { createRedisTrackSnapshotStore } from "./tracking/snapshot.js";
 
 try {
   process.loadEnvFile(); // .env for local dev; real deployments inject env vars
@@ -23,9 +27,18 @@ const redis = new Redis(config.redisUrl, {
 redis.on("ready", () => logger.info("redis", "ready"));
 redis.on("error", (err) => logger.warn("redis", "error", { error: err.message }));
 
+const hub = new TrackStreamHub(config.sseKeepaliveMs);
+setOpenStreamsGauge(() => hub.openStreams());
+
 const app = createApp({
   internalToken: config.internalToken,
   devViewer: config.devViewerEnabled,
+  track: {
+    logistics: createHttpLogisticsClient({ baseUrl: config.logisticsBaseUrl, timeoutMs: config.logisticsTimeoutMs }),
+    hub,
+    snapshots: createRedisTrackSnapshotStore(redis),
+    enrichDeadlineMs: config.enrichDeadlineMs,
+  },
   deps: {
     osrm: createHttpOsrmClient({
       baseUrl: config.osrmBaseUrl,
@@ -39,21 +52,25 @@ const app = createApp({
     matchMinConfidence: config.matchMinConfidence,
     matchOverlapPoints: config.matchOverlapPoints,
     matchMaxPoints: config.matchMaxPoints,
-    coverage: config.coverageBbox,
+    coverage: config.coverage,
   },
 });
 
 const server = app.listen(config.port, () => {
   logger.info("server", "listening", {
+    env: config.env,
+    token_required: Boolean(config.internalToken),
+    logistics: config.logisticsBaseUrl ?? "not configured",
     port: config.port,
     osrm: config.osrmBaseUrl,
-    coverage: config.coverageBbox ?? "none",
+    coverage: config.coverage ?? "none",
   });
   if (config.devViewerEnabled) logger.info("server", "dev route viewer", { url: `http://127.0.0.1:${config.port}/dev/route-viewer` });
 });
 
 function shutdown(signal: string) {
   logger.info("server", "shutting down", { signal });
+  hub.closeAll(); // open SSE streams would keep server.close() waiting
   server.close(() => {
     redis.quit().finally(() => process.exit(0));
   });

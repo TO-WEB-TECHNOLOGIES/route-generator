@@ -2,7 +2,7 @@
  * One GPS update in, the optional routing fields out. NEVER throws and never waits longer than one
  * OSRM timeout (route and match run in parallel). Anything that fails is simply omitted.
  */
-import { formatLatLng, isInBbox, type Bbox, type LatLng, type TimedPoint } from "../geo/point.js";
+import { formatLatLng, isCovered, type Coverage, type LatLng, type TimedPoint } from "../geo/point.js";
 import { logger } from "../logger.js";
 import type { OsrmClient } from "../osrm/client.js";
 import type { RouteCache } from "./cache.js";
@@ -17,8 +17,8 @@ export interface EnrichDeps {
   matchMinConfidence: number;
   matchOverlapPoints: number;
   matchMaxPoints: number;
-  /** Area the map covers. Points outside never reach OSRM (ROUTE-09). Unset = no check. */
-  coverage?: Bbox | undefined;
+  /** Area the map covers (one box per region). Points outside never reach OSRM (ROUTE-09). Unset = no check. */
+  coverage?: Coverage | undefined;
 }
 
 export interface EnrichInput {
@@ -50,7 +50,7 @@ export async function enrich(deps: EnrichDeps, input: EnrichInput): Promise<Enri
   const destination = to === "store" ? input.storeGps : to === "drop" ? input.dropGps : undefined;
 
   // Outside the map, OSRM would snap to a road possibly hundreds of km away: never ask it.
-  const covered = (p: LatLng) => !deps.coverage || isInBbox(p, deps.coverage);
+  const covered = (p: LatLng) => !deps.coverage || isCovered(p, deps.coverage);
   const canRoute = Boolean(to && destination && covered(input.rider) && covered(destination));
   const path = deps.coverage ? input.path.filter((p) => covered(p.point)) : input.path;
 

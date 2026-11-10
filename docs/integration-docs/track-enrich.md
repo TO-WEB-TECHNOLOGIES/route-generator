@@ -95,7 +95,8 @@ available this update". Forward exactly what you get.
 On a final stage (`Order-delivered`, `Cancelled`, `RTO-Delivered`, `RTO-Disposed`) the service drops its cache for the order and returns only
 `drop_gps`.
 
-**Outside the covered area** (Delhi, Gurugram, Noida, Ghaziabad; updated 2026-11-06): when the
+**Outside the covered area** (Delhi NCR: Delhi, Gurugram, Noida, Ghaziabad; plus Bengaluru since
+2026-11-10; updated 2026-11-06): when the
 rider or destination is outside it, `route_ahead` is omitted, and trail points outside it are
 ignored for `road_path`. Previously such orders could get an absurd route snapped to the edge of
 the map. Same response shape; the fields are just absent.

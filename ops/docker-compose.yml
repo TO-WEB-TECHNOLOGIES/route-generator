@@ -8,7 +8,8 @@
 name: osrm-bff
 
 services:
-  # Step 1: download the Delhi/Haryana/UP extracts, clip to the NCR box, merge. Runs once, then exits.
+  # Step 1: download the Delhi/Haryana/UP/Karnataka extracts (or use ops/maps/), clip each to the NCR
+  # and Bengaluru boxes, merge. Runs once, then exits.
   osrm-prep:
     build:
       context: ./osrm
@@ -17,7 +18,7 @@ services:
     pull_policy: build
     # Defaults are baked into ops/osrm/prep.Dockerfile; override here if needed:
     # environment:
-    #   OSRM_BBOX: "76.75,28.20,77.80,28.95"
+    #   OSRM_BBOX: "76.75,28.20,77.80,28.95;77.35,12.75,77.90,13.25"   # NCR;Bengaluru
     #   OSRM_FORCE_REBUILD: "1"
     volumes:
       - osrm-data:/data

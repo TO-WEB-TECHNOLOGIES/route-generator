@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Step 1 of 2 (runs in the osrm-prep container): produce /data/<dataset>.osm.pbf for the NCR box.
-#   inputs -> clip each to OSRM_BBOX -> merge into one file.
+# Step 1 of 2 (runs in the osrm-prep container): produce /data/<dataset>.osm.pbf for the covered boxes.
+#   inputs -> clip each to every OSRM_BBOX box (NCR;Bengaluru) -> merge into one file.
 # Inputs, in order of preference:
 #   1. Map files you downloaded yourself, dropped in ops/maps/ (mounted read-only at /maps).
 #   2. Otherwise, download each URL in OSRM_PBF_URLS.
@@ -75,15 +75,41 @@ else
   done
 fi
 
+# OSRM_BBOX: one or more boxes "minLng,minLat,maxLng,maxLat", separated by ";" (one per region,
+# e.g. NCR;Bengaluru). Each input is cut to EVERY box in a single read (osmium extract -c), so a
+# Delhi file contributes nothing to the Bengaluru box and vice versa. That's fine: the parts are
+# merged below into one map holding separate road networks.
+boxes=()
+if [ -n "${OSRM_BBOX:-}" ]; then
+  IFS=';' read -r -a raw_boxes <<< "$OSRM_BBOX"
+  for b in "${raw_boxes[@]}"; do
+    b="${b// /}"
+    if ! [[ "$b" =~ ^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$ ]]; then
+      log "ERROR: OSRM_BBOX box '$b' is not minLng,minLat,maxLng,maxLat (boxes are separated by ';')"
+      exit 1
+    fi
+    boxes+=("$b")
+  done
+fi
+
 clipped=()
 i=0
 for file in "${inputs[@]}"; do
-  if [ -n "${OSRM_BBOX:-}" ]; then
+  if [ "${#boxes[@]}" -gt 0 ]; then
     i=$((i + 1))
-    log "clipping $(basename "$file") to bbox $OSRM_BBOX"
-    osmium extract --overwrite --no-progress --strategy smart --set-bounds -b "$OSRM_BBOX" \
-      -o "$src/clip-$i.osm.pbf" "$file"
-    clipped+=("$src/clip-$i.osm.pbf")
+    cfg="$src/extract-$i.json"
+    {
+      printf '{"directory":"%s","extracts":[' "$src"
+      for j in "${!boxes[@]}"; do
+        [ "$j" -gt 0 ] && printf ','
+        # osmium bbox array order: [left, bottom, right, top] = minLng,minLat,maxLng,maxLat
+        printf '{"output":"clip-%s-%s.osm.pbf","bbox":[%s]}' "$i" "$j" "${boxes[$j]}"
+      done
+      printf ']}'
+    } > "$cfg"
+    log "clipping $(basename "$file") to ${#boxes[@]} box(es): ${boxes[*]}"
+    osmium extract --overwrite --no-progress --strategy smart --set-bounds -c "$cfg" "$file"
+    for j in "${!boxes[@]}"; do clipped+=("$src/clip-$i-$j.osm.pbf"); done
   else
     clipped+=("$file")
   fi
@@ -97,7 +123,7 @@ else
 fi
 
 # Only temporary/downloaded files are removed. Files in ops/maps/ are yours and are never touched.
-rm -f "$src"/clip-*.osm.pbf
+rm -f "$src"/clip-*.osm.pbf "$src"/extract-*.json
 [ "${OSRM_KEEP_SOURCES:-0}" = "1" ] || rm -rf "$src"
 printf '%s\n%s\n' "$fingerprint" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$PREP_MARKER"
 log "ready: $OUT ($(du -h "$OUT" | cut -f1))"

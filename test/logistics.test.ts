@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { DEFAULT_COVERAGE_BBOX } from "../src/config.js";
-import { parseBbox, parseSequence } from "../src/geo/point.js";
+import { parseCoverage, parseSequence } from "../src/geo/point.js";
 import { breadcrumbsToPath, toEnrichInput } from "../src/logistics/mapper.js";
 import type { LogisticsStatusEvent, LogisticsTrackingEvent, OrderEndpoints } from "../src/logistics/types.js";
 import { createHttpOsrmClient } from "../src/osrm/client.js";
@@ -24,7 +24,7 @@ const fixture = <T>(name: string): T =>
 const tracking = fixture<LogisticsTrackingEvent>("order_tracking.ncr.json");
 const status = fixture<LogisticsStatusEvent>("order_status.ncr.json");
 const endpoints = fixture<OrderEndpoints>("order_endpoints.ncr.json");
-const NCR = parseBbox(DEFAULT_COVERAGE_BBOX)!;
+const COVERAGE = parseCoverage(DEFAULT_COVERAGE_BBOX)!;
 
 /** What ondc-logistics-api's track.repository does with ONDC /on_track tags (one group per point). */
 function pathFromOnTrackTags(onTrack: any): LogisticsTrackingEvent["path"] {
@@ -91,7 +91,7 @@ describe("logistics mapper", () => {
     assert.equal(noEndpoints.dropGps, undefined);
   });
 
-  it("contract fixture (Bengaluru) through enrich: outside NCR, OSRM never called, only drop_gps", async () => {
+  it("contract fixture (Bengaluru, covered since 2026-11-10) through enrich: route + trail built, lng,lat to OSRM", async () => {
     const onTrack = fixture<any>("on_track.contract.json");
     const event: LogisticsTrackingEvent = {
       event: "order_tracking",
@@ -102,10 +102,27 @@ describe("logistics mapper", () => {
     };
     const osrm = new FakeOsrm();
     const out = await enrich(
-      makeDeps({ osrm, coverage: NCR }),
+      makeDeps({ osrm, coverage: COVERAGE }),
       toEnrichInput(event, "Out-for-delivery", { endGps: "12.9750,77.6200" })!,
     );
-    assert.deepEqual(out, { drop_gps: "12.975,77.62" });
+    assert.equal(out.drop_gps, "12.975,77.62");
+    assert.equal(out.route_ahead?.to, "drop");
+    assert.equal(typeof out.road_path, "string");
+    assert.deepEqual(osrm.routeCalls[0], { from: { lat: 12.974002, lng: 77.613458 }, to: { lat: 12.975, lng: 77.62 } });
+    assert.equal(osrm.matchCalls[0]!.length, 3);
+  });
+
+  it("an order outside every box (Mumbai): OSRM never called, only drop_gps", async () => {
+    const osrm = new FakeOsrm();
+    const event: LogisticsTrackingEvent = {
+      event: "order_tracking",
+      orderId: "O3",
+      gps: "19.0760,72.8777",
+      path: [{ lat_lng: "19.0760,72.8777", sequence: "1" }, { lat_lng: "19.0770,72.8780", sequence: "2" }],
+      updatedAt: "2026-11-10T06:00:00.000Z",
+    };
+    const out = await enrich(makeDeps({ osrm, coverage: COVERAGE }), toEnrichInput(event, "Out-for-delivery", { endGps: "19.0800,72.8800" })!);
+    assert.deepEqual(out, { drop_gps: "19.08,72.88" });
     assert.equal(osrm.routeCalls.length + osrm.matchCalls.length, 0);
   });
 });
@@ -225,7 +242,7 @@ describe("OSRM /match URL with and without timestamps", () => {
 
 describe("OSRM slow / down with logistics input (CLAUDE.md §6)", () => {
   const input = toEnrichInput(tracking, "Order-picked-up", endpoints)!;
-  const depsWith = (osrmBase?: string) => makeDeps({ osrm: client(osrmBase), coverage: NCR });
+  const depsWith = (osrmBase?: string) => makeDeps({ osrm: client(osrmBase), coverage: COVERAGE });
 
   it("slow OSRM: answers within ~one timeout with only drop_gps", async () => {
     reply = "hang";

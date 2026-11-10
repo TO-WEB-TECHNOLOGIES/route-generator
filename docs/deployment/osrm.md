@@ -15,7 +15,8 @@ Neither port is public. OSRM has no auth, so the network is its only protection.
 
 ## Coverage: Delhi NCR (decided 2026-11-04)
 
-Day-one cities: **Delhi, Gurugram, Noida, Ghaziabad**, across three states. Source:
+Cities: **Delhi, Gurugram, Noida, Ghaziabad** (Delhi NCR, three states) and, since 2026-11-10,
+**Bengaluru** (Karnataka). Source:
 **openstreetmap.fr per-state extracts** (switched from Geofabrik on 2026-11-05: half the download):
 
 | File | From | Size | Covers |
@@ -23,18 +24,27 @@ Day-one cities: **Delhi, Gurugram, Noida, Ghaziabad**, across three states. Sour
 | `national_capital_territory_of_delhi-latest.osm.pbf` | <https://download.openstreetmap.fr/extracts/asia/india/national_capital_territory_of_delhi-latest.osm.pbf> | ~27 MB | Delhi |
 | `haryana-latest.osm.pbf` | <https://download.openstreetmap.fr/extracts/asia/india/haryana-latest.osm.pbf> | ~52 MB | Gurugram |
 | `uttar_pradesh-latest.osm.pbf` | <https://download.openstreetmap.fr/extracts/asia/india/uttar_pradesh-latest.osm.pbf> | ~200 MB | Noida, Greater Noida, Ghaziabad |
+| `karnataka-latest.osm.pbf` | <https://download.openstreetmap.fr/extracts/asia/india/karnataka-latest.osm.pbf> | size to record on first download | Bengaluru (added 2026-11-10) |
 
 Fallback (Geofabrik, ~549 MB total): `asia/india/northern-zone-latest.osm.pbf` (Delhi, Haryana) +
 `asia/india/central-zone-latest.osm.pbf` (Uttar Pradesh), set via `OSRM_PBF_URLS`. Zone
 membership was checked against Geofabrik's `.poly` boundaries on 2026-11-04.
 
-The `osrm-prep` image downloads them, clips each to the box `76.75,28.20,77.80,28.95` (minlon,minlat,maxlon,maxlat)
-with `osmium extract --strategy smart`, and merges them into `ncr.osm.pbf`. The clipped dataset
+The `osrm-prep` image downloads them, clips each to **every** box in `OSRM_BBOX` (one per region,
+`;`-separated, each minlon,minlat,maxlon,maxlat: NCR `76.75,28.20,77.80,28.95`, Bengaluru
+`77.35,12.75,77.90,13.25`) with one `osmium extract --strategy smart -c` pass per file, and merges
+everything into `ncr.osm.pbf`. The map then holds two separate road networks; a route from NCR to
+Bengaluru is `NoRoute` (the service answers 404). The dataset keeps the name `ncr` for now. The clipped dataset
 is small, so the build needs a few GB of RAM rather than the tens a full-India build needs. Outside the box OSRM
 returns `NoSegment`/`NoRoute`, and the service just omits the routing fields.
 
-To add a city later: widen `OSRM_BBOX` (and add its zone to `OSRM_PBF_URLS` if needed), then
-rebuild (`OSRM_FORCE_REBUILD=1` on `osrm-prep`, or a fresh dated folder via `build.sh`).
+To add a city: append its box to `OSRM_BBOX` (`prep.Dockerfile`) **and** to the service's default
+`COVERAGE_BBOX` (`src/config.ts`; `test/geo.test.ts` fails if they differ), add its state extract to
+`OSRM_PBF_URLS` (or put the file in `ops/maps/`), then rebuild. Changing the inputs or boxes
+triggers the rebuild automatically; `OSRM_FORCE_REBUILD=1` forces one.
+
+**Disk/RAM with Bengaluru (2026-11-10):** not measured yet. Record the build's peak RAM, the
+`ncr.osrm*` size and the `osrm-routed` RSS here after the first two-region build.
 
 ## Images: two steps, two containers (changed 2026-11-05)
 
@@ -69,7 +79,7 @@ The OSRM healthcheck uses bash's `/dev/tcp` (there's no `curl` in that image) to
 |---|---|---|
 | `OSRM_LOCAL_MAPS_DIR` | prep | `/maps` (where `ops/maps/` is mounted; any `*.pbf` there wins over the URLs) |
 | `OSRM_PBF_URLS` | prep | the three state URLs above (space-separated); used only when `ops/maps/` has no `.pbf` |
-| `OSRM_BBOX` | prep | `76.75,28.20,77.80,28.95` (empty = no clipping) |
+| `OSRM_BBOX` | prep | `76.75,28.20,77.80,28.95;77.35,12.75,77.90,13.25` (NCR;Bengaluru, one box per region; empty = no clipping) |
 | `OSRM_DATASET` | both | `ncr` (files are `/data/ncr.osm.pbf`, `/data/ncr.osrm*`) |
 | `OSRM_FORCE_REBUILD` | both | unset. Rarely needed now that input changes are detected. On prep, `1` re-prepares regardless (which forces a graph rebuild); on osrm, `1` rebuilds the graph from the existing `.osm.pbf` |
 | `OSRM_KEEP_SOURCES` | prep | unset (`1` = keep the downloaded zone files in `/data/src`) |

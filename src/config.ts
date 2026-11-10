@@ -2,13 +2,14 @@
  * Every tunable lives here, with a default. Mirror changes in `.env.example` and the tunables
  * table in `docs/internal/routing.md` (CLAUDE.local.md Rule 7).
  */
-import { parseBbox, type Bbox } from "./geo/point.js";
+import { parseCoverage, type Coverage } from "./geo/point.js";
 
 /**
- * Must match OSRM_BBOX in ops/osrm/prep.Dockerfile (the area the map is built for).
- * If you widen one, widen the other.
+ * The area the map is built for: one box per region, ";"-separated (minLng,minLat,maxLng,maxLat).
+ * Delhi NCR (Delhi, Gurugram, Noida, Ghaziabad) and Bengaluru (2026-11-10).
+ * Must equal OSRM_BBOX in ops/osrm/prep.Dockerfile; test/geo.test.ts fails if they drift.
  */
-export const DEFAULT_COVERAGE_BBOX = "76.75,28.20,77.80,28.95";
+export const DEFAULT_COVERAGE_BBOX = "76.75,28.20,77.80,28.95;77.35,12.75,77.90,13.25";
 
 function str(name: string, fallback: string): string {
   const v = process.env[name];
@@ -31,7 +32,11 @@ function num(name: string, fallback: number): number {
   return n;
 }
 
+/** Deployment environment. TEST: no token checks. PREPROD: token required on every guarded route. */
+export type AppEnv = "TEST" | "PREPROD";
+
 export interface Config {
+  env: AppEnv;
   port: number;
   osrmBaseUrl: string;
   osrmProfile: string;
@@ -58,16 +63,39 @@ export interface Config {
    */
   matchRadiusM: number;
   /**
-   * Area the map covers. Points outside never reach OSRM, which would otherwise snap them to the
-   * nearest road however far away (a Mumbai point snapped 1,078 km: ROUTE-09). undefined = no check.
+   * Area the map covers (one box per region). Points outside never reach OSRM, which would otherwise
+   * snap them to the nearest road however far away (a Mumbai point snapped 1,078 km: ROUTE-09).
+   * undefined = no check.
    */
-  coverageBbox: Bbox | undefined;
+  coverage: Coverage | undefined;
   /** If OSRM had to move a route point further than this (m) to reach a road, treat as "no route". */
   maxSnapDistanceM: number;
-  /** If set, /internal/* requires header X-Internal-Token with this value. */
+  /**
+   * Token that /internal/*, /v1/route and /v1/track* require as X-Internal-Token. Always undefined
+   * with ENV=TEST (no checks); always set with ENV=PREPROD (startup fails without INTERNAL_TOKEN).
+   */
   internalToken: string | undefined;
-  /** Serve the dev map page at /dev/route-viewer. Default: on, except when NODE_ENV=production. */
+  /** Serve the dev map page at /dev/route-viewer. Default: on with ENV=TEST, off with ENV=PREPROD. */
   devViewerEnabled: boolean;
+  /** ondc-logistics-api base URL (no trailing slash). undefined = POST /v1/track answers 503. */
+  logisticsBaseUrl: string | undefined;
+  /** Per-call timeout for ondc-logistics-api (POST /logistics/track, GET .../status). */
+  logisticsTimeoutMs: number;
+  /**
+   * Max time routing (stage lookup + enrich) may hold back a track_update. After it, the update is
+   * pushed with only the GPS fields: routing never delays the GPS update (CLAUDE.md §1).
+   */
+  enrichDeadlineMs: number;
+  /** Interval of the SSE keep-alive comment, so proxies don't drop an idle stream. */
+  sseKeepaliveMs: number;
+}
+
+/** ENV: unset = PREPROD (fail closed). */
+export function parseAppEnv(raw: string | undefined): AppEnv {
+  const v = (raw ?? "").trim().toUpperCase();
+  if (v === "") return "PREPROD";
+  if (v === "TEST" || v === "PREPROD") return v;
+  throw new Error(`Config ENV must be TEST or PREPROD, got "${raw}"`);
 }
 
 export function loadConfig(): Config {
@@ -75,14 +103,20 @@ export function loadConfig(): Config {
   if (/router\.project-osrm\.org/i.test(baseUrl)) {
     throw new Error("OSRM_BASE_URL points at the public demo server. Use the private OSRM instance.");
   }
+  const env = parseAppEnv(process.env.ENV);
   const token = str("INTERNAL_TOKEN", "");
-  // COVERAGE_BBOX: unset = default box; "none" = disable the check.
+  if (env === "PREPROD" && token === "") {
+    throw new Error("ENV=PREPROD requires INTERNAL_TOKEN (set ENV=TEST for local development without a token)");
+  }
+  const logisticsBaseUrl = str("LOGISTICS_BASE_URL", "").replace(/\/+$/, "");
+  // COVERAGE_BBOX: unset = default boxes; "none" = disable the check.
   const bboxRaw = str("COVERAGE_BBOX", DEFAULT_COVERAGE_BBOX);
-  const coverageBbox = bboxRaw === "none" ? undefined : parseBbox(bboxRaw);
-  if (coverageBbox === null) {
-    throw new Error(`Config COVERAGE_BBOX must be "minLng,minLat,maxLng,maxLat" or "none", got "${bboxRaw}"`);
+  const coverage = bboxRaw === "none" ? undefined : parseCoverage(bboxRaw);
+  if (coverage === null) {
+    throw new Error(`Config COVERAGE_BBOX must be "minLng,minLat,maxLng,maxLat" boxes separated by ";", or "none", got "${bboxRaw}"`);
   }
   return {
+    env,
     port: num("PORT", 4100),
     osrmBaseUrl: baseUrl,
     osrmProfile: str("OSRM_PROFILE", "driving"),
@@ -97,9 +131,13 @@ export function loadConfig(): Config {
     matchOverlapPoints: num("MATCH_OVERLAP_POINTS", 1),
     matchMaxPoints: num("MATCH_MAX_POINTS", 100),
     matchRadiusM: num("MATCH_RADIUS_M", 30),
-    coverageBbox,
+    coverage,
     maxSnapDistanceM: num("MAX_SNAP_DISTANCE_M", 200),
-    internalToken: token === "" ? undefined : token,
-    devViewerEnabled: bool("DEV_VIEWER_ENABLED", process.env.NODE_ENV !== "production"),
+    internalToken: env === "TEST" || token === "" ? undefined : token,
+    devViewerEnabled: bool("DEV_VIEWER_ENABLED", env === "TEST"),
+    logisticsBaseUrl: logisticsBaseUrl === "" ? undefined : logisticsBaseUrl,
+    logisticsTimeoutMs: num("LOGISTICS_TIMEOUT_MS", 5000),
+    enrichDeadlineMs: num("ENRICH_DEADLINE_MS", 1200),
+    sseKeepaliveMs: num("SSE_KEEPALIVE_MS", 25000),
   };
 }

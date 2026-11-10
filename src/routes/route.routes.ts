@@ -4,12 +4,12 @@
  * every error as "draw a straight line".
  */
 import { Router, type Request, type Response } from "express";
-import { formatLatLng, isInBbox, parseLatLng, type Bbox } from "../geo/point.js";
+import { formatLatLng, isCovered, parseLatLng, type Coverage } from "../geo/point.js";
 import type { OsrmClient } from "../osrm/client.js";
 
 export interface RouteDeps {
   osrm: OsrmClient;
-  coverage?: Bbox | undefined;
+  coverage?: Coverage | undefined;
 }
 
 const fail = (res: Response, status: number, code: string, message: string) =>
@@ -23,7 +23,7 @@ export function routeRouter(deps: RouteDeps): Router {
     if (!from || !to) {
       return fail(res, 400, "INVALID_POINT", 'Query params "from" and "to" are required as "lat,lng"');
     }
-    if (deps.coverage && (!isInBbox(from, deps.coverage) || !isInBbox(to, deps.coverage))) {
+    if (deps.coverage && (!isCovered(from, deps.coverage) || !isCovered(to, deps.coverage))) {
       return fail(res, 422, "OUT_OF_COVERAGE", "A point is outside the area covered by the routing map");
     }
 

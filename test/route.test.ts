@@ -9,12 +9,12 @@ import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { createApp } from "../src/app.js";
 import { DEFAULT_COVERAGE_BBOX } from "../src/config.js";
-import { parseBbox } from "../src/geo/point.js";
+import { parseCoverage } from "../src/geo/point.js";
 import { createHttpOsrmClient } from "../src/osrm/client.js";
 import { enrich } from "../src/routing/enrich.js";
 import { FakeOsrm, makeDeps, trail } from "./helpers/fakes.js";
 
-const NCR = parseBbox(DEFAULT_COVERAGE_BBOX)!;
+const COVERAGE = parseCoverage(DEFAULT_COVERAGE_BBOX)!;
 const TIMEOUT_MS = 200;
 
 // ---- stub OSRM: tests set `reply`; every request URL is recorded in `urls` ----
@@ -51,7 +51,7 @@ before(async () => {
     maxSnapDistanceM: 200,
     matchRadiusM: 30,
   });
-  const app = createApp({ deps: makeDeps({ osrm, coverage: NCR }), internalToken: "t0ken" });
+  const app = createApp({ deps: makeDeps({ osrm, coverage: COVERAGE }), internalToken: "t0ken" });
   const server = app.listen(0);
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   closeApp = () => server.close();
@@ -84,6 +84,20 @@ describe("GET /v1/route", () => {
       duration_s: 813,
     });
     assert.ok(urls[0]!.startsWith("/route/v1/driving/77.0886,28.495;77.0266,28.4595?"), urls[0]);
+  });
+
+  it("200 in Bengaluru too (second coverage box), lng,lat in the OSRM URL", async () => {
+    const res = await getRoute("from=12.9740,77.6134&to=12.9352,77.6245");
+    assert.equal(res.status, 200);
+    assert.ok(urls[0]!.startsWith("/route/v1/driving/77.6134,12.974;77.6245,12.9352?"), urls[0]);
+  });
+
+  it("NCR -> Bengaluru: both covered, OSRM says NoRoute (separate road networks) -> 404", async () => {
+    reply = { status: 400, body: { code: "NoRoute", message: "Impossible route" } };
+    const res = await getRoute(`from=${CYBER_HUB}&to=12.9740,77.6134`);
+    assert.equal(res.status, 404);
+    assert.equal(((await res.json()) as any).error.code, "NO_ROUTE");
+    assert.equal(urls.length, 1, "both points are covered, so OSRM is asked");
   });
 
   it("400 INVALID_POINT for missing or malformed points", async () => {
@@ -166,7 +180,7 @@ describe("enrich coverage guard (ROUTE-09)", () => {
   const MUMBAI_DROP = { lat: 18.922, lng: 72.8355 };
 
   it("an order outside NCR never reaches OSRM and gets only drop_gps", async () => {
-    const deps = makeDeps({ coverage: NCR });
+    const deps = makeDeps({ coverage: COVERAGE });
     const mumbaiTrail = trail(4).map((p) => ({ ...p, point: { lat: p.point.lat - 9.4, lng: p.point.lng - 4.2 } }));
     const out = await enrich(deps, {
       orderId: "odX",
@@ -181,7 +195,7 @@ describe("enrich coverage guard (ROUTE-09)", () => {
   });
 
   it("drops only the trail points outside NCR", async () => {
-    const deps = makeDeps({ coverage: NCR });
+    const deps = makeDeps({ coverage: COVERAGE });
     const pts = trail(4);
     pts[1] = { ...pts[1]!, point: MUMBAI }; // one wild GPS fix
     await enrich(deps, {
@@ -215,7 +229,7 @@ describe("GET /dev/route-viewer", () => {
   });
 
   it("serves the HTML page without a token when enabled, and no OSRM call", async () => {
-    const app = createApp({ deps: makeDeps({ coverage: NCR }), internalToken: "t0ken", devViewer: true });
+    const app = createApp({ deps: makeDeps({ coverage: COVERAGE }), internalToken: "t0ken", devViewer: true });
     const server = app.listen(0);
     try {
       const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/dev/route-viewer`);

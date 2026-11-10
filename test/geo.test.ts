@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatLatLng, haversineMeters, isInBbox, parseBbox, parseLatLng, toOsrmCoord } from "../src/geo/point.js";
+import { readFileSync } from "node:fs";
+import { DEFAULT_COVERAGE_BBOX } from "../src/config.js";
+import {
+  formatLatLng,
+  haversineMeters,
+  isCovered,
+  isInBbox,
+  parseBbox,
+  parseCoverage,
+  parseLatLng,
+  toOsrmCoord,
+} from "../src/geo/point.js";
 import { decodePolyline, encodePolyline, joinPaths } from "../src/geo/polyline.js";
 
 describe("point", () => {
@@ -52,6 +63,48 @@ describe("coverage box", () => {
     }
     assert.ok(!isInBbox({ lat: 19.076, lng: 72.8777 }, ncr), "Mumbai");
     assert.ok(!isInBbox({ lat: 77.0266, lng: 28.4595 }, ncr), "swapped Gurugram");
+  });
+});
+
+describe("coverage: NCR + Bengaluru (2026-11-10)", () => {
+  const coverage = parseCoverage(DEFAULT_COVERAGE_BBOX)!;
+
+  it("parses ;-separated boxes; a single box is still valid; one bad box rejects all", () => {
+    assert.equal(coverage.length, 2);
+    assert.deepEqual(coverage[1], { minLng: 77.35, minLat: 12.75, maxLng: 77.9, maxLat: 13.25 });
+    assert.equal(parseCoverage("76.75,28.20,77.80,28.95")!.length, 1);
+    for (const bad of ["", "76.75,28.20,77.80,28.95;", "76.75,28.20,77.80,28.95;1,2,3", 7]) {
+      assert.equal(parseCoverage(bad), null, String(bad));
+    }
+  });
+
+  it("covers both cities; excludes Mumbai, between-city points and lat/lng swaps", () => {
+    for (const [name, lat, lng] of [
+      ["Delhi", 28.6139, 77.209],
+      ["Noida", 28.5355, 77.391],
+      ["Bengaluru MG Road", 12.974, 77.6134],
+      ["Koramangala", 12.9352, 77.6245],
+      ["Whitefield", 12.9698, 77.75],
+      ["Electronic City", 12.8452, 77.6602],
+      ["Kempegowda airport", 13.1989, 77.7068],
+    ] as const) {
+      assert.ok(isCovered({ lat, lng }, coverage), name);
+    }
+    for (const [name, lat, lng] of [
+      ["Mumbai", 19.076, 72.8777],
+      ["Hyderabad (between the cities)", 17.385, 78.4867],
+      ["swapped MG Road", 77.6134, 12.974],
+      ["swapped Gurugram", 77.0266, 28.4595],
+    ] as const) {
+      assert.ok(!isCovered({ lat, lng }, coverage), name);
+    }
+  });
+
+  it("COVERAGE_BBOX default equals OSRM_BBOX in ops/osrm/prep.Dockerfile (map and service must agree)", () => {
+    const dockerfile = readFileSync(new URL("../ops/osrm/prep.Dockerfile", import.meta.url), "utf8");
+    const m = dockerfile.match(/OSRM_BBOX="([^"]+)"/);
+    assert.ok(m, "OSRM_BBOX not found in prep.Dockerfile");
+    assert.equal(m[1], DEFAULT_COVERAGE_BBOX);
   });
 });
 
