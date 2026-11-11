@@ -11,9 +11,9 @@ below._
 | Where it runs | Base URL |
 |---|---|
 | Your machine (`npm run dev`) | `http://127.0.0.1:4100`. Use `127.0.0.1`, not `localhost` (on Windows, `localhost` can resolve to IPv6 and fail) |
-| Render | `https://<service-name>.onrender.com`, shown at the top of the service page in Render |
+| Render | `https://osrm-bff.onrender.com`, shown at the top of the service page in Render |
 
-Every path below is appended to the base URL, e.g. `https://<service-name>.onrender.com/v1/route`.
+Every path below is appended to the base URL, e.g. `https://osrm-bff.onrender.com/v1/route`.
 
 **Not port 5000.** That's the internal routing engine (OSRM), not this API. It answers every one
 of our paths with `{"code":"InvalidUrl"}`, and on Render it isn't reachable at all.
@@ -71,7 +71,7 @@ OUT_OF_COVERAGE`.
 
 **curl (bash / WSL / macOS / Linux):**
 ```bash
-BASE=https://<service-name>.onrender.com
+BASE=https://osrm-bff.onrender.com
 TOKEN=<token>
 
 curl -H "X-Internal-Token: $TOKEN" "$BASE/v1/route?from=28.4950,77.0886&to=28.4595,77.0266"
@@ -80,7 +80,7 @@ Keep the quotes around the URL: without them the shell treats `&` as "run in bac
 
 **PowerShell (Windows):**
 ```powershell
-$base = "https://<service-name>.onrender.com"
+$base = "https://osrm-bff.onrender.com"
 $headers = @{ "X-Internal-Token" = "<token>" }
 
 Invoke-RestMethod -Uri "$base/v1/route?from=28.4950,77.0886&to=28.4595,77.0266" -Headers $headers
