@@ -49,7 +49,7 @@ export function recordLogistics(op: LogisticsOp, outcome: LogisticsOutcome, late
   s.latencyMsMax = Math.max(s.latencyMsMax, latencyMs);
 }
 
-const freshTrack = () => ({ webhooks: 0, updates_pushed: 0, routing_deadline_hit: 0 });
+const freshTrack = () => ({ webhooks: 0, webhooks_no_gps: 0, updates_pushed: 0, routing_deadline_hit: 0 });
 let track = freshTrack();
 export function recordTrack(event: keyof ReturnType<typeof freshTrack>): void {
   track[event] += 1;

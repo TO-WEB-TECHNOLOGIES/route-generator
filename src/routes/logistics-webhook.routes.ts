@@ -10,7 +10,11 @@ import type { LogisticsOnTrackWebhook } from "../logistics/types.js";
 import { recordTrack } from "../metrics.js";
 import { handleOnTrack, type TrackDeps } from "../tracking/service.js";
 
-type Parsed = { ok: true; body: LogisticsOnTrackWebhook } | { ok: false; error: string };
+type Parsed =
+  | { ok: true; body: LogisticsOnTrackWebhook }
+  /** URL-based tracking (ONDC config `tracking.url` / `deferred`): no position, nothing to push. */
+  | { ok: true; noGps: { orderId: string; configType?: string | undefined } }
+  | { ok: false; error: string };
 
 const optStr = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined);
 
@@ -20,7 +24,13 @@ export function parseOnTrackWebhook(raw: unknown): Parsed {
   if (typeof b.orderId !== "string" || b.orderId === "" || b.orderId.length > 128) {
     return { ok: false, error: "orderId is required" };
   }
-  if (!parseLatLng(b.gps)) return { ok: false, error: 'gps is required as "lat,lng"' };
+  // Missing gps is a valid /on_track (the LSP tracks by URL), so not a 400. A gps that is present
+  // but unparsable is still a bug on the sender's side.
+  if (b.gps === undefined || b.gps === null || b.gps === "") {
+    const config = b.config as Record<string, unknown> | undefined;
+    return { ok: true, noGps: { orderId: b.orderId, configType: optStr(config?.type) } };
+  }
+  if (!parseLatLng(b.gps)) return { ok: false, error: 'gps must be "lat,lng"' };
   if (b.path !== undefined && b.path !== null && !Array.isArray(b.path)) return { ok: false, error: "path must be an array" };
 
   return {
@@ -52,6 +62,15 @@ export function logisticsWebhookRouter(deps: TrackDeps): Router {
     }
     recordTrack("webhooks");
     res.status(202).json({ accepted: true });
+    if ("noGps" in parsed) {
+      // A-lite (2026-11-11): track_update.gps stays required, so a position-less update isn't pushed.
+      recordTrack("webhooks_no_gps");
+      logger.info("webhook", "on_track without gps (URL-based tracking), nothing pushed", {
+        order_id: parsed.noGps.orderId,
+        config_type: parsed.noGps.configType ?? null,
+      });
+      return undefined;
+    }
     // After answering: routing must never hold up the logistics callback.
     void handleOnTrack(deps, parsed.body).catch((err) =>
       logger.error("webhook", "handleOnTrack crashed", { order_id: parsed.body.orderId, error: String(err) }),

@@ -18,7 +18,7 @@ _Created 2026-11-04 (initial boilerplate)._ Design spec: `.claude/skills/bff-roa
 | `src/osrm/client.ts` | `/route` and `/match` over `fetch` with `AbortSignal.timeout`. Returns typed results, never throws |
 | `src/geo/point.ts` | `"lat,lng"` parsing, `toOsrmCoord` (lng first), haversine, `Bbox` / `parseBbox` / `isInBbox` |
 | `src/geo/polyline.ts` | Encode/decode precision 5, `joinPaths` |
-| `src/metrics.ts` | OSRM call outcomes + latency, served on `/metrics` |
+| `src/metrics.ts` | OSRM call outcomes + latency, logistics calls, track counters (`webhooks`, `webhooks_no_gps`, `updates_pushed`, `routing_deadline_hit`), served on `/metrics` |
 | `src/config.ts` | All tunables |
 | `src/keepalive.ts` | Self-ping of our public `/health` to stay awake on free hosts (2026-11-10) |
 | `ops/render/` | Render free-tier image: one container with OSRM on 127.0.0.1 + osrm-bff (`docs/deployment/render.md`) |
@@ -99,7 +99,10 @@ real OSRM (ROUTE-03).
 
 **Live tracking (2026-11-10).** `POST /v1/track` forwards `{orderId}` to the logistics API and passes
 its answer through. The logistics API forwards each processed `/on_track` to the webhook, which
-answers 202 first. Then `handleOnTrack()`:
+answers 202 first. A forward with no `gps` (URL-based tracking, ONDC config `deferred`) stops
+there: it's logged by `order_id`, counted in `track.webhooks_no_gps`, and nothing is pushed or
+cached (2026-11-11, A-lite: `track_update.gps` stays required). A `gps` that is present but
+unparsable is still a 400. Otherwise `handleOnTrack()`:
 1. Builds the GPS-only update: `gps`, `gps_timestamp`, `status`, `tracking_url`, `drop_gps`,
    `store_gps`, `stage` from the payload. None of these wait on routing.
 2. Races "routing" against `ENRICH_DEADLINE_MS`. Routing = stage from the payload, else

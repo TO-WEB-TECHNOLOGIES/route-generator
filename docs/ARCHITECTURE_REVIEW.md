@@ -33,6 +33,10 @@ Full plan and read-only findings: `task/osrm-via-logistics-api-plan.md`; order o
   never ship in a release build). Browser `EventSource` can't send headers either.
 - **Confirm:** with D1, do INT-01..03 (ondc-api calling enrich) still apply, or are they superseded?
 - `/track` is valid only after pickup (LSP NACK `60012`), so no "route to store" from this path.
+- **Preprod can't show routes end to end (2026-11-11):** the workbench `/on_track` always returns a
+  fixed Bengaluru rider (`12.9740,77.6134`) while `/search`/`/init` use Gurugram. Markers show in
+  NCR, no route is built (coverage guard). Test routes with hand-made NCR webhook calls.
+- Logistics' open questions (`LOGISTICS_API_CHANGES.md` §5) answered 2026-11-11.
 - Still open: D6 (tests in the logistics repo). D3 settled for our side: snake_case to the frontend.
 
 ## Integration gaps (found 2026-11-04 against `../ondc-api` as it stands)
@@ -54,6 +58,15 @@ viewer's `/track` call hits the BPP. Confirm the target polling design with the 
 Needed in ondc-api (not this repo): call `POST /internal/v1/track/enrich` from `processOnTrack`
 with a ~1500 ms timeout, merge the result into the cache/SSE payload and `getTrack`, add
 `OSRM_BFF_URL` / `OSRM_BFF_TOKEN` config, and update `docs/integration-docs/track.md` there.
+
+## Operations
+
+### OPS-01 `[OPEN]` Automated deploy to Render on push (2026-11-11)
+Today the Render image is built on a laptop (graph copied from the local Docker volume), pushed to
+GHCR by hand, and `render.yaml` / the dashboard is edited to deploy. Plan:
+`task/github-actions-render-deploy-plan.md` (CI on every PR, map base image built rarely, app image
+built + deployed via a Render deploy hook on push to `main`). Open: which remote hosts CI
+(`origin` personal vs `neworigin` org), and who owns the Render deploy hook secret.
 
 ## Performance
 
@@ -80,15 +93,20 @@ On low confidence, `last_seq` isn't advanced, so the next update retries with mo
 persistently unmatchable stretch would keep `road_path` omitted for the rest of the order.
 Options: advance past it after N failures (leaving a gap), or match smaller windows.
 
-### ROUTE-11 `[OPEN]` Is the logistics breadcrumb `sequence` a stable per-order counter? (2026-11-10)
+### ROUTE-11 `[OPEN]` Logistics breadcrumbs don't grow the trail (2026-11-10, evidence 2026-11-11)
 Since 2026-11-09 `sequence` is the only ordering and the idempotency boundary (`last_seq`) for
-logistics input, which has no per-point time. Neither the ONDC contract example nor
-`../ondc-logistics-api/docs/integration/post-order.md` says how LSPs number it. If an LSP renumbers
-a sliding window `1..N` on every `/on_track`, new points look like duplicates (`sequence <= last_seq`)
-and `road_path` silently stops growing. If an LSP resets the counter mid-order, the same happens.
-To do: check real `/on_track` callbacks per LSP (staging logs); if needed, detect a reset (points
-differ but max sequence <= `last_seq`) or dedupe by position. Also measure `/match` confidence on
-untimed traces vs timed ones (feeds ROUTE-03).
+logistics input, which has no per-point time. **Confirmed 2026-11-11** (logistics owner, real
+workbench `/on_track`, `config.type` `live_poll`): every callback carries **one** breadcrumb,
+numbered `"1"`, equal to `gps`. After the first update every point looks like a duplicate
+(`1 <= last_seq`), and one point can't be matched anyway, so `road_path` never appears on preprod.
+Logistics passes LSP tags through unchanged and has no real-LSP samples; an LSP that renumbers a
+window `1..N` or resets mid-order would fail the same way.
+**Proposed fix (option B, awaiting approval):** osrm-bff records its own breadcrumbs from each
+forwarded `gps` + `locationTimestamp`, numbered by us, in a new key `route:crumbs:{order_id}`
+(named TTL, same lifetime as `route:trail:*`, cleared on a final stage). Skip a point whose
+timestamp isn't newer than the last one, or whose position didn't change. Use it whenever the LSP's
+`path` doesn't advance past `last_seq`. Bonus: real timestamps for `/match` (helps ROUTE-03, and is
+the "osrm-bff records raw points" option in INT-01). Needs a Redis key plan (CLAUDE.local.md Rule 7).
 
 ### ROUTE-05 `[OPEN]` Two-wheeler profile vs `car.lua`
 `car.lua` obeys one-way streets, so routes can be longer than what riders actually take. Don't

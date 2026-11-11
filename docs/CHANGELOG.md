@@ -31,6 +31,7 @@ problems live in `docs/ARCHITECTURE_REVIEW.md`, not here.
 | 2026-11-10 | OPS | Render free-tier deployment: `ops/render/` image (osrm-bff + OSRM on 127.0.0.1, NCR graph baked in, `--mmap=1`: ~50 MB at 512 MB/0.1 CPU) and `render.yaml`; see docs/deployment/render.md. |
 | 2026-11-10 | OPS | Keep-alive self-ping (`src/keepalive.ts`): GETs our public `/health` every 10 min; on by default on Render (`RENDER_EXTERNAL_URL`). |
 | 2026-11-10 | DOCS | `docs/deployment/render-design.md` (why each Render choice, alternatives), `docs/integration-docs/calling-the-api.md` (base URL, token, endpoints, route examples), Render Postman environment. |
+| 2026-11-11 | API | Logistics webhook: a forward with no `gps` (URL-based / `deferred` tracking) now gets 202 and pushes nothing, instead of a 400; counted as `track.webhooks_no_gps`. |
 
 ---
 

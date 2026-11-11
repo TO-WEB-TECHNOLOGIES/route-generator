@@ -116,7 +116,7 @@ Extra fields (`tags`, `config`, `trackedOrderId`, …) are fine: osrm-bff ignore
 | Field | Status | Source in ondc-logistics-api | Used by osrm-bff for |
 |---|---|---|---|
 | `orderId` | **required** (already sent) | `row.orderId` | Cache key; which frontend streams get the update |
-| `gps` | **required** (already sent) | `columns.trackingGps` | Rider marker, start of the route ahead |
+| `gps` | **required for GPS tracking** (already sent). Omit it for URL-based tracking (`config.type` `deferred`): osrm-bff answers 202 and pushes nothing (2026-11-11) | `columns.trackingGps` | Rider marker, start of the route ahead |
 | `path[]` | already sent | breadcrumb tags (`lat_lng`, `sequence` as strings) | Trail snapped to roads |
 | `locationTimestamp`, `status`, `url`, `updatedAt` | already sent | as today | Passed through to the frontend |
 | **`fulfillmentState`** | **NEW, strongly recommended** (fallback: one `GET .../status` per update) | `logisticsOrder.fulfillmentStateCode` (`src/db/schema/logistics-order.schema.ts:61`); `orderRow` is already loaded in the handler | Picks the destination: store before pickup, home after, none at/after delivery |
@@ -146,7 +146,7 @@ Use `127.0.0.1`, not `localhost`, on Windows: Node resolves `localhost` to IPv6 
 | Status | Meaning | Logistics should |
 |---|---|---|
 | `202` | `{ "accepted": true }`. Routes are built after answering | nothing |
-| `400` | Payload malformed (e.g. no `orderId` or bad `gps`) | log it; it's a bug, don't retry |
+| `400` | Payload malformed (no `orderId`, or a `gps` that is present but not `"lat,lng"`). A **missing** `gps` is fine (202) | log it; it's a bug, don't retry |
 | `401` | Missing or wrong `X-Internal-Token` (PREPROD) | check `OSRM_BFF_TOKEN` |
 | `5xx` / timeout / connection refused | osrm-bff down | log and move on. **Tracking for logistics' own clients must be unaffected** |
 
@@ -156,17 +156,21 @@ osrm-bff will call it **server to server** with `{ "orderId": "…" }`, forwardi
 request. There's no `Origin` header, so CORS doesn't apply. Expect up to one call per watched order
 about every 15 s, only while someone has the map open.
 
-## 5. Open questions for the logistics owner
+## 5. Open questions for the logistics owner (answered 2026-11-11)
 
-1. **How does each LSP number `path[].sequence`?** osrm-bff uses it to know which points are new.
-   - A counter that grows for the whole order (`1, 2, … 250`), with all or the latest points each time: **works**.
-   - The latest point only, always numbered `"1"`, or a window renumbered `1..N` on every callback:
-     **the trail stops growing.** Please share two consecutive real `/on_track` payloads for the same order.
-2. **Does every `/on_track` reach this handler for every LSP**, including `live_poll` and push-style configs?
-3. **Which `fulfillmentState` values do your LSPs actually send** beyond the ONDC list in
-   `docs/integration/post-order.md`? osrm-bff maps that list; unknown values just get no route.
-4. **Can test orders on PREPROD use Delhi NCR coordinates?** osrm-bff's map covers Delhi, Gurugram,
-   Noida and Ghaziabad only. A Bengaluru order (`12.97,77.61`) gets no routes at all.
+1. **`path[].sequence`:** the workbench sends one point, numbered `"1"`, equal to `gps`, on every
+   `/on_track`. Logistics passes LSP tags through unchanged. No real-LSP samples yet. Effect: the
+   trail doesn't grow on preprod (tracked in `docs/ARCHITECTURE_REVIEW.md` ROUTE-11).
+2. **Does every `/on_track` reach the handler?** Yes: `/on_track` is always a reply to our `/track`,
+   and every one goes through `handleCallback`. URL-based LSPs (`config` `tracking.url` /
+   `deferred`) send `url` and no `gps`; osrm-bff accepts those with 202 and pushes nothing.
+3. **`fulfillmentState` values:** passed through from the LSP unmapped. The workbench sends
+   `Order-picked-up`.
+4. **NCR test orders:** `/search` and `/init` use Gurugram, but the workbench's `/on_track` always
+   returns a fixed Bengaluru rider (`12.9740,77.6134`). Store and home markers show in NCR; no route
+   is built. Test routes with hand-made NCR webhook calls instead.
+5. **`POST /logistics/track` from a server:** works as is (no `Origin` header gets through CORS;
+   body `{ orderId }`).
 
 ## How to verify on your side
 

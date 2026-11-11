@@ -11,6 +11,7 @@ import { createApp } from "../src/app.js";
 import { DEFAULT_COVERAGE_BBOX, loadConfig, parseAppEnv } from "../src/config.js";
 import { parseCoverage } from "../src/geo/point.js";
 import { createHttpLogisticsClient } from "../src/logistics/client.js";
+import { metricsSnapshot } from "../src/metrics.js";
 import type { OsrmClient } from "../src/osrm/client.js";
 import { TrackStreamHub } from "../src/tracking/hub.js";
 import { FakeOsrm, HangingOsrm, makeDeps, MemorySnapshotStore, openSse } from "./helpers/fakes.js";
@@ -153,15 +154,41 @@ describe("POST /v1/track", () => {
 });
 
 describe("on_track webhook -> frontend stream", () => {
-  it("400 for a body without orderId or a usable gps; 202 for the real payload shape", async () => {
+  it("400 for a body without orderId or with an unparsable gps; 202 for the real payload shape", async () => {
     const { base } = startApp();
     const url = `${base}/internal/v1/logistics/on_track`;
-    for (const body of [{ gps: "28.49,77.08" }, { orderId: "o1" }, { orderId: "o1", gps: "garbage" }, { orderId: "o1", gps: "28.49,77.08", path: "x" }]) {
+    for (const body of [{ gps: "28.49,77.08" }, { orderId: "o1", gps: "garbage" }, { orderId: "o1", gps: "28.49,77.08", path: "x" }]) {
       assert.equal((await post(url, body)).status, 400, JSON.stringify(body));
     }
     const res = await post(url, webhookBody(newOrderId()));
     assert.equal(res.status, 202);
     assert.deepEqual(await res.json(), { accepted: true });
+  });
+
+  it("URL-based tracking (no gps, config type deferred): 202, nothing pushed, no snapshot, no OSRM call", async () => {
+    const { base, osrm } = startApp();
+    const orderId = newOrderId();
+    const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
+    const { gps: _gps, path: _path, locationTimestamp: _ts, ...rest } = webhookBody(orderId);
+    const deferred = {
+      ...rest,
+      url: "https://lsp.example/track/od1",
+      config: { attr: "tracking.url", type: "deferred" },
+    };
+    const before = metricsSnapshot().track;
+    for (const body of [deferred, { ...deferred, gps: null }, { ...deferred, gps: "" }] as Array<Record<string, unknown>>) {
+      const res = await post(`${base}/internal/v1/logistics/on_track`, body);
+      assert.equal(res.status, 202, JSON.stringify(body.gps));
+      assert.deepEqual(await res.json(), { accepted: true });
+    }
+    await new Promise((r) => setTimeout(r, DEADLINE_MS + 50));
+    assert.equal(s.events.length, 0);
+    assert.equal((await fetch(`${base}/v1/orders/${orderId}/track`)).status, 404);
+    assert.equal((osrm as FakeOsrm).routeCalls.length + (osrm as FakeOsrm).matchCalls.length, 0);
+    const afterSnap = metricsSnapshot().track;
+    assert.equal(afterSnap.webhooks_no_gps - before.webhooks_no_gps, 3);
+    assert.equal(afterSnap.updates_pushed, before.updates_pushed);
+    s.close();
   });
 
   it("pushes one track_update with routing fields to every open stream; the snapshot serves it", async () => {

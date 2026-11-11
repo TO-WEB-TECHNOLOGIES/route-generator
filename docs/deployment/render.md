@@ -374,6 +374,7 @@ Packages until you delete them.
 | `POST /v1/track` returns 503 `LOGISTICS_UNAVAILABLE`                    | `LOGISTICS_BASE_URL` wrong, or the logistics API down                        | Fix the variable; check the logistics API from your machine                                                                                                                              |
 | Service sleeps anyway                                                   | Keep-alive not running or failing                                            | Logs should show `keepalive started` with your public URL; `ping failed` lines show why. `RENDER_EXTERNAL_URL` is set by Render; `KEEPALIVE_URL` overrides it                            |
 | Bengaluru routes return 422 `OUT_OF_COVERAGE`                           | Expected: this image is NCR only                                             | —                                                                                                                                                                                        |
+| Live order from the ONDC workbench shows markers in NCR but no route (2026-11-11) | Expected: the workbench `/on_track` always sends a Bengaluru rider (`12.9740,77.6134`), outside this image's map | Test routes with a hand-made NCR call to `/internal/v1/logistics/on_track` (see step 11) |
 
 ---
 
