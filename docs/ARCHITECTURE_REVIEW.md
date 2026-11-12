@@ -22,9 +22,10 @@ Full plan and read-only findings: `task/osrm-via-logistics-api-plan.md`; order o
   we forward to `POST /logistics/track`; logistics forwards each `/on_track` to our webhook (Q2: webhook,
   not SSE); we push `track_update` over SSE (D2: one event, routing under `ENRICH_DEADLINE_MS`); the
   frontend polls `/v1/track` (D4). See `docs/integration-docs/track.md`.
-- **Pending, ondc-logistics-api:** the forward itself plus `fulfillmentState`, `startGps`, `endGps`
-  (`LOGISTICS_API_CHANGES.md`). Without the GPS fields there's no route ahead and no home marker.
-  Without `fulfillmentState` we fall back to one `GET .../status` call per update.
+- **ondc-logistics-api forward done 2026-11-11** (their commit `c1eb3fb`, read-only check
+  2026-11-12): forward + `fulfillmentState`, `startGps`, `endGps`, matching `LOGISTICS_API_CHANGES.md`.
+  Not yet run end to end through a real `/on_track` against both services.
+- Trail on this path now comes from our own breadcrumbs (ROUTE-11 fixed 2026-11-12).
 - **D5 decided 2026-11-09:** logistics stages mapped per plan Phase 1.3 (see `docs/CHANGELOG.md`).
 - Timestamp-less breadcrumbs: now accepted (2026-11-09). Match confidence on untimed traces is still
   to be measured on real OSRM (ROUTE-03).
@@ -38,6 +39,17 @@ Full plan and read-only findings: `task/osrm-via-logistics-api-plan.md`; order o
   NCR, no route is built (coverage guard). Test routes with hand-made NCR webhook calls.
 - Logistics' open questions (`LOGISTICS_API_CHANGES.md` §5) answered 2026-11-11.
 - Still open: D6 (tests in the logistics repo). D3 settled for our side: snake_case to the frontend.
+
+## Live tracking gaps (2026-11-12)
+
+Details, effects and proposed fixes: `docs/internal/live-tracking-gaps.md`.
+
+- TRACK-01 `[OPEN]` No access control on the stream / snapshot. **Blocks production** (same decision as INT-04 Q4).
+- TRACK-02 `[OPEN]` Stream may never close after delivery: final states come via `/on_status`, which logistics doesn't forward.
+- TRACK-03 `[OPEN]` Async tracking errors (`track_error`, e.g. 60012) never reach the frontend.
+- TRACK-04 `[OPEN]` No `/track` polling limit per order (N viewers = N LSP calls); no polling without viewers.
+- TRACK-05 `[DEFERRED]` Streams in one process's memory; see SCALE-02.
+- TRACK-06 `[OPEN]` Unknown order ids open a stream and wait forever.
 
 ## Integration gaps (found 2026-11-04 against `../ondc-api` as it stands)
 
@@ -92,21 +104,6 @@ staging before fixing it. Synthetic evidence (2026-11-06, local NCR OSRM, `radiu
 On low confidence, `last_seq` isn't advanced, so the next update retries with more context. A
 persistently unmatchable stretch would keep `road_path` omitted for the rest of the order.
 Options: advance past it after N failures (leaving a gap), or match smaller windows.
-
-### ROUTE-11 `[OPEN]` Logistics breadcrumbs don't grow the trail (2026-11-10, evidence 2026-11-11)
-Since 2026-11-09 `sequence` is the only ordering and the idempotency boundary (`last_seq`) for
-logistics input, which has no per-point time. **Confirmed 2026-11-11** (logistics owner, real
-workbench `/on_track`, `config.type` `live_poll`): every callback carries **one** breadcrumb,
-numbered `"1"`, equal to `gps`. After the first update every point looks like a duplicate
-(`1 <= last_seq`), and one point can't be matched anyway, so `road_path` never appears on preprod.
-Logistics passes LSP tags through unchanged and has no real-LSP samples; an LSP that renumbers a
-window `1..N` or resets mid-order would fail the same way.
-**Proposed fix (option B, awaiting approval):** osrm-bff records its own breadcrumbs from each
-forwarded `gps` + `locationTimestamp`, numbered by us, in a new key `route:crumbs:{order_id}`
-(named TTL, same lifetime as `route:trail:*`, cleared on a final stage). Skip a point whose
-timestamp isn't newer than the last one, or whose position didn't change. Use it whenever the LSP's
-`path` doesn't advance past `last_seq`. Bonus: real timestamps for `/match` (helps ROUTE-03, and is
-the "osrm-bff records raw points" option in INT-01). Needs a Redis key plan (CLAUDE.local.md Rule 7).
 
 ### ROUTE-05 `[OPEN]` Two-wheeler profile vs `car.lua`
 `car.lua` obeys one-way streets, so routes can be longer than what riders actually take. Don't
