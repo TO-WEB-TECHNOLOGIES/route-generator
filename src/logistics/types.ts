@@ -44,7 +44,8 @@ export interface OrderEndpoints {
  */
 export interface LogisticsOnTrackWebhook {
   orderId: string;
-  gps: string;
+  /** Missing for URL-based tracking (ONDC config `tracking.url` / `deferred`): `url` only (2026-11-12). */
+  gps?: string | undefined;
   transactionId?: string | undefined;
   url?: string | undefined;
   status?: string | undefined;

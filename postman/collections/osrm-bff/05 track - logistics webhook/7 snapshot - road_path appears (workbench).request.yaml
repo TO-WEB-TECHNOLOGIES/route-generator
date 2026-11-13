@@ -1,0 +1,23 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/orders/{{workbenchOrderId}}/track'
+order: 4300
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      setTimeout(() => {}, 1500);
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      const u = pm.response.json();
+      pm.test('200, latest position', () => {
+        pm.response.to.have.status(200);
+        pm.expect(u.gps).to.eql('28.496203,77.087864');
+      });
+      pm.test('road_path built from two of our own breadcrumbs (needs OSRM up)', () => {
+        pm.expect(u.road_path).to.be.a('string').and.not.empty;
+      });

@@ -1,0 +1,23 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/v1/orders/{{urlOrderId}}/track'
+order: 4500
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      setTimeout(() => {}, 1500);
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      const u = pm.response.json();
+      pm.test('200: the URL-only update reached the frontend', () => pm.response.to.have.status(200));
+      pm.test('tracking_url and markers, no gps, no routes', () => {
+        pm.expect(u.tracking_url).to.eql('https://lsp.example/ondc/track/1');
+        pm.expect(u.drop_gps).to.eql('28.459469,77.026635');
+        pm.expect(u.store_gps).to.eql('28.49534,77.088059');
+        pm.expect(u).to.not.have.any.keys('gps', 'route_ahead', 'road_path');
+      });

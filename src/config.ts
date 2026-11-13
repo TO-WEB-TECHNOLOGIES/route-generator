@@ -86,6 +86,13 @@ export interface Config {
    * pushed with only the GPS fields: routing never delays the GPS update (CLAUDE.md §1).
    */
   enrichDeadlineMs: number;
+  /**
+   * Logistics path: a rider position closer than this (m) to our last recorded breadcrumb is not
+   * added (rider standing still, or the same /on_track again). See src/tracking/crumbs.ts (ROUTE-11).
+   */
+  crumbMinMoveM: number;
+  /** Logistics path: newest N breadcrumbs kept per order (route:crumbs:*). >= MATCH_MAX_POINTS. */
+  crumbsMaxPoints: number;
   /** Interval of the SSE keep-alive comment, so proxies don't drop an idle stream. */
   sseKeepaliveMs: number;
   /**
@@ -147,6 +154,8 @@ export function loadConfig(): Config {
     logisticsBaseUrl: logisticsBaseUrl === "" ? undefined : logisticsBaseUrl,
     logisticsTimeoutMs: num("LOGISTICS_TIMEOUT_MS", 5000),
     enrichDeadlineMs: num("ENRICH_DEADLINE_MS", 1200),
+    crumbMinMoveM: num("CRUMB_MIN_MOVE_M", 10),
+    crumbsMaxPoints: num("CRUMBS_MAX_POINTS", 120),
     sseKeepaliveMs: num("SSE_KEEPALIVE_MS", 25000),
     keepaliveUrl: keepaliveRaw === "none" ? undefined : keepaliveRaw,
     // 10 min: under Render's ~15 min idle limit, with room for one failed ping.

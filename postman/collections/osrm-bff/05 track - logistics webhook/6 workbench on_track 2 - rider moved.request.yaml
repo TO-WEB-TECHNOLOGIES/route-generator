@@ -1,0 +1,36 @@
+$kind: http-request
+description: Same order, 15 s later, ~100 m on. path[] is again one point numbered "1".
+method: POST
+url: '{{baseUrl}}/internal/v1/logistics/on_track'
+order: 4200
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "event": "order_tracking",
+      "orderId": "{{workbenchOrderId}}",
+      "status": "active",
+      "gps": "28.496203,77.087864",
+      "locationTimestamp": "2026-11-12T06:00:15.000Z",
+      "path": [{ "lat_lng": "28.496203,77.087864", "sequence": "1" }],
+      "updatedAt": "2026-11-12T06:00:16.000Z",
+      "config": { "attr": "tracking.location.gps", "type": "live_poll" },
+      "fulfillmentState": "Order-picked-up",
+      "startGps": "28.495340,77.088059",
+      "endGps": "28.459469,77.026635"
+    }
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      // Let update 1 finish (routing deadline 1.2 s) so its breadcrumb is stored first.
+      setTimeout(() => {}, 1500);
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('202 { accepted: true }', () => pm.response.to.have.status(202));

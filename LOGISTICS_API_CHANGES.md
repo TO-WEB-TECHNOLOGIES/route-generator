@@ -1,7 +1,9 @@
 # Changes needed in ondc-logistics-api
 
-_Written 2026-11-10 by osrm-bff. **Status: request, for the ondc-logistics-api owner.** The osrm-bff
-side (the webhook below) is built and tested as of 2026-11-10.
+_Written 2026-11-10 by osrm-bff. **Status: done on the logistics side 2026-11-11** (ondc-logistics-api
+`c1eb3fb`; checked read-only 2026-11-12). The osrm-bff side (the webhook below) is built and tested as of 2026-11-10.
+Since 2026-11-12 osrm-bff builds the trail from each forwarded `gps` + `locationTimestamp`, not from
+`path[]`, so keep sending `locationTimestamp`; `path[]` may stay as is.
 That repo's own rules apply (plan first, a `changelogs/` entry per change). File and line references
 were checked read-only against `../ondc-logistics-api` on 2026-11-10._
 
@@ -116,7 +118,7 @@ Extra fields (`tags`, `config`, `trackedOrderId`, …) are fine: osrm-bff ignore
 | Field | Status | Source in ondc-logistics-api | Used by osrm-bff for |
 |---|---|---|---|
 | `orderId` | **required** (already sent) | `row.orderId` | Cache key; which frontend streams get the update |
-| `gps` | **required for GPS tracking** (already sent). Omit it for URL-based tracking (`config.type` `deferred`): osrm-bff answers 202 and pushes nothing (2026-11-11) | `columns.trackingGps` | Rider marker, start of the route ahead |
+| `gps` | **required for GPS tracking** (already sent). Omit it for URL-based tracking (`config.type` `deferred`): osrm-bff answers 202 and pushes the update with `url` and no position (2026-11-12; until then it pushed nothing). Keep sending `url` | `columns.trackingGps` | Rider marker, start of the route ahead |
 | `path[]` | already sent | breadcrumb tags (`lat_lng`, `sequence` as strings) | Trail snapped to roads |
 | `locationTimestamp`, `status`, `url`, `updatedAt` | already sent | as today | Passed through to the frontend |
 | **`fulfillmentState`** | **NEW, strongly recommended** (fallback: one `GET .../status` per update) | `logisticsOrder.fulfillmentStateCode` (`src/db/schema/logistics-order.schema.ts:61`); `orderRow` is already loaded in the handler | Picks the destination: store before pickup, home after, none at/after delivery |
@@ -160,10 +162,11 @@ about every 15 s, only while someone has the map open.
 
 1. **`path[].sequence`:** the workbench sends one point, numbered `"1"`, equal to `gps`, on every
    `/on_track`. Logistics passes LSP tags through unchanged. No real-LSP samples yet. Effect: the
-   trail doesn't grow on preprod (tracked in `docs/ARCHITECTURE_REVIEW.md` ROUTE-11).
+   trail didn't grow; fixed on the osrm-bff side 2026-11-12 (own breadcrumbs, `docs/CHANGELOG.md` ROUTE-11).
 2. **Does every `/on_track` reach the handler?** Yes: `/on_track` is always a reply to our `/track`,
    and every one goes through `handleCallback`. URL-based LSPs (`config` `tracking.url` /
-   `deferred`) send `url` and no `gps`; osrm-bff accepts those with 202 and pushes nothing.
+   `deferred`) send `url` and no `gps`; osrm-bff accepts those with 202 and, since 2026-11-12, pushes
+   them to the frontend with `tracking_url`.
 3. **`fulfillmentState` values:** passed through from the LSP unmapped. The workbench sends
    `Order-picked-up`.
 4. **NCR test orders:** `/search` and `/init` use Gurugram, but the workbench's `/on_track` always

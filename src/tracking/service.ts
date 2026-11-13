@@ -5,7 +5,7 @@
  * If they're slower, the update goes out with only the GPS fields; enrich keeps running in the
  * background and its cache writes help the next update. Never throws.
  */
-import { formatLatLng, parseLatLng } from "../geo/point.js";
+import { formatLatLng, parseLatLng, type LatLng, type TimedPoint } from "../geo/point.js";
 import { logger } from "../logger.js";
 import type { LogisticsClient } from "../logistics/client.js";
 import { toEnrichInput } from "../logistics/mapper.js";
@@ -14,6 +14,7 @@ import { recordTrack } from "../metrics.js";
 import { enrich, type EnrichDeps, type EnrichOutput } from "../routing/enrich.js";
 import { isTerminalStage } from "../routing/stage.js";
 import type { RouteAhead } from "../routing/route-ahead.js";
+import { appendCrumb, crumbsToPath, isoToUnixSeconds, type CrumbOptions } from "./crumbs.js";
 import type { TrackStreamHub } from "./hub.js";
 import type { TrackSnapshotStore } from "./snapshot.js";
 
@@ -21,7 +22,8 @@ import type { TrackSnapshotStore } from "./snapshot.js";
 export interface TrackUpdate {
   order_id: string;
   stage?: string;
-  gps: string;
+  /** Missing for URL-based tracking: show tracking_url instead (2026-11-12). */
+  gps?: string;
   gps_timestamp?: string;
   status?: string;
   tracking_url?: string;
@@ -38,6 +40,8 @@ export interface TrackDeps {
   hub: TrackStreamHub;
   snapshots: TrackSnapshotStore;
   enrichDeadlineMs: number;
+  /** Our own breadcrumbs, which drive the trail on this path (ROUTE-11). */
+  crumbs: CrumbOptions;
 }
 
 /** Stage placeholder when neither the payload nor the status fallback knows it: no route ahead. */
@@ -56,13 +60,36 @@ function deadline(ms: number): { promise: Promise<"deadline">; cancel: () => voi
   return { promise, cancel: () => clearTimeout(timer) };
 }
 
+/**
+ * Append this update's rider position to route:crumbs:{order_id} and return the crumbs as the
+ * trail input. Redis down = no history: just this point, so no road_path this update.
+ */
+async function recordCrumb(
+  deps: TrackDeps,
+  orderId: string,
+  rider: LatLng,
+  body: LogisticsOnTrackWebhook,
+): Promise<TimedPoint[]> {
+  const cache = deps.enrich.cache;
+  const t = isoToUnixSeconds(body.locationTimestamp) ?? Math.floor(Date.now() / 1000);
+  const { entry, skipped } = appendCrumb(await cache.getCrumbs(orderId), rider, t, deps.crumbs);
+  if (skipped) recordTrack(skipped === "older" ? "crumbs_skipped_older" : "crumbs_skipped_not_moved");
+  else {
+    recordTrack("crumbs_added");
+    await cache.setCrumbs(orderId, entry);
+  }
+  return crumbsToPath(entry);
+}
+
 export async function handleOnTrack(deps: TrackDeps, body: LogisticsOnTrackWebhook): Promise<TrackUpdate> {
   const orderId = body.orderId;
   const update: TrackUpdate = {
     order_id: orderId,
-    gps: normalizedPoint(body.gps) ?? body.gps,
     updated_at: body.updatedAt ?? new Date().toISOString(),
   };
+  // URL-based tracking has no gps: toEnrichInput() below then returns null, so no OSRM call and no
+  // breadcrumb; only the stage is looked up.
+  if (body.gps) update.gps = normalizedPoint(body.gps) ?? body.gps;
   if (body.fulfillmentState) update.stage = body.fulfillmentState;
   if (body.locationTimestamp) update.gps_timestamp = body.locationTimestamp;
   if (body.status) update.status = body.status;
@@ -75,11 +102,15 @@ export async function handleOnTrack(deps: TrackDeps, body: LogisticsOnTrackWebho
   const routing = (async (): Promise<{ stage: string | undefined; out: EnrichOutput }> => {
     const stage = body.fulfillmentState || (await deps.logistics.getFulfillmentState(orderId)) || undefined;
     const input = toEnrichInput(
-      { event: "order_tracking", orderId, gps: body.gps, path: body.path, updatedAt: update.updated_at },
+      { event: "order_tracking", orderId, gps: body.gps, updatedAt: update.updated_at },
       stage ?? UNKNOWN_STAGE,
       { startGps: body.startGps, endGps: body.endGps },
     );
-    return { stage, out: input ? await enrich(deps.enrich, input) : {} };
+    if (!input) return { stage, out: {} };
+    // The trail comes from our own breadcrumbs, not the LSP's path[] (ROUTE-11). A final stage
+    // skips this: enrich() clears every cache key of the order.
+    const path = isTerminalStage(input.stage) ? [] : await recordCrumb(deps, orderId, input.rider, body);
+    return { stage, out: await enrich(deps.enrich, { ...input, path }) };
   })().catch((err) => {
     logger.error("track", "routing crashed", { order_id: orderId, error: String(err) });
     return null;

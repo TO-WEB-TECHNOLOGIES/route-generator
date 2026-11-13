@@ -1,0 +1,38 @@
+$kind: http-request
+description: |-
+  LSP that tracks by URL only (ONDC config "deferred"): no gps, no path. Since 2026-11-12 this is
+  pushed to the frontend with tracking_url (before: nothing pushed).
+method: POST
+url: '{{baseUrl}}/internal/v1/logistics/on_track'
+order: 4400
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "event": "order_tracking",
+      "orderId": "{{urlOrderId}}",
+      "status": "active",
+      "url": "https://lsp.example/ondc/track/1",
+      "updatedAt": "2026-11-12T06:00:01.000Z",
+      "config": { "attr": "tracking.url", "type": "deferred" },
+      "fulfillmentState": "Order-picked-up",
+      "startGps": "28.495340,77.088059",
+      "endGps": "28.459469,77.026635"
+    }
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      pm.collectionVariables.set('urlOrderId', 'pm-url-' + Date.now());
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('202 { accepted: true } (a missing gps is not a 400)', () => {
+        pm.response.to.have.status(202);
+        pm.expect(pm.response.json()).to.eql({ accepted: true });
+      });

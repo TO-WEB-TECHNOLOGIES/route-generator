@@ -23,8 +23,10 @@ scripts:
         pm.expect(u.drop_gps).to.eql('28.459469,77.026635');
         pm.expect(u.store_gps).to.eql('28.49534,77.088059');
       });
-      pm.test('routes added: route_ahead to the drop + road_path (needs OSRM up)', () => {
+      pm.test('route_ahead to the drop (needs OSRM up)', () => {
         pm.expect(u.route_ahead.to).to.eql('drop');
         pm.expect(u.route_ahead.distance_m).to.be.within(5000, 15000);
-        pm.expect(u.road_path).to.be.a('string').and.not.empty;
+      });
+      pm.test('no road_path yet: the trail is built from our own breadcrumbs, one per update (2026-11-12)', () => {
+        pm.expect(u).to.not.have.property('road_path');
       });

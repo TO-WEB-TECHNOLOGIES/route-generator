@@ -1,16 +1,19 @@
 import type { LatLng, TimedPoint } from "../../src/geo/point.js";
 import type { MatchOk, OsrmClient, OsrmFail, RouteOk } from "../../src/osrm/client.js";
-import type { RouteAheadEntry, RouteCache, TrailEntry } from "../../src/routing/cache.js";
+import type { CrumbsEntry, RouteAheadEntry, RouteCache, TrailEntry } from "../../src/routing/cache.js";
 import type { EnrichDeps } from "../../src/routing/enrich.js";
 
 export class MemoryRouteCache implements RouteCache {
   ahead = new Map<string, RouteAheadEntry>();
   trail = new Map<string, TrailEntry>();
+  crumbs = new Map<string, CrumbsEntry>();
   async getAhead(id: string) { return this.ahead.get(id) ?? null; }
   async setAhead(id: string, e: RouteAheadEntry) { this.ahead.set(id, e); }
   async getTrail(id: string) { return this.trail.get(id) ?? null; }
   async setTrail(id: string, e: TrailEntry) { this.trail.set(id, e); }
-  async clear(id: string) { this.ahead.delete(id); this.trail.delete(id); }
+  async getCrumbs(id: string) { return this.crumbs.get(id) ?? null; }
+  async setCrumbs(id: string, e: CrumbsEntry) { this.crumbs.set(id, e); }
+  async clear(id: string) { this.ahead.delete(id); this.trail.delete(id); this.crumbs.delete(id); }
 }
 
 export class FakeOsrm implements OsrmClient {

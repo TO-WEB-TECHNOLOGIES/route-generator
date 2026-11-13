@@ -14,7 +14,8 @@ import { createHttpLogisticsClient } from "../src/logistics/client.js";
 import { metricsSnapshot } from "../src/metrics.js";
 import type { OsrmClient } from "../src/osrm/client.js";
 import { TrackStreamHub } from "../src/tracking/hub.js";
-import { FakeOsrm, HangingOsrm, makeDeps, MemorySnapshotStore, openSse } from "./helpers/fakes.js";
+import type { RouteCache } from "../src/routing/cache.js";
+import { FakeOsrm, HangingOsrm, makeDeps, MemoryRouteCache, MemorySnapshotStore, openSse } from "./helpers/fakes.js";
 
 const COVERAGE = parseCoverage(DEFAULT_COVERAGE_BBOX)!;
 const LOGISTICS_TIMEOUT_MS = 200;
@@ -43,12 +44,13 @@ let logisticsUrl = "";
 
 // ---- app under test ----
 const servers: Array<{ close: () => void }> = [];
-function startApp(opts: { osrm?: OsrmClient; token?: string; logisticsBase?: string | null } = {}) {
+function startApp(opts: { osrm?: OsrmClient; token?: string; logisticsBase?: string | null; cache?: RouteCache } = {}) {
   const snapshots = new MemorySnapshotStore();
   const hub = new TrackStreamHub(10_000);
   const osrm = opts.osrm ?? new FakeOsrm();
+  const cache = opts.cache ?? new MemoryRouteCache();
   const app = createApp({
-    deps: makeDeps({ osrm, coverage: COVERAGE }),
+    deps: makeDeps({ osrm, cache, coverage: COVERAGE }),
     internalToken: opts.token,
     track: {
       logistics: createHttpLogisticsClient({
@@ -58,12 +60,13 @@ function startApp(opts: { osrm?: OsrmClient; token?: string; logisticsBase?: str
       hub,
       snapshots,
       enrichDeadlineMs: DEADLINE_MS,
+      crumbs: { minMoveM: 10, maxPoints: 120 },
     },
   });
   const server = app.listen(0);
   servers.push({ close: () => { hub.closeAll(); server.closeAllConnections(); server.close(); } });
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { base, snapshots, hub, osrm };
+  return { base, snapshots, hub, osrm, cache };
 }
 
 before(async () => {
@@ -165,8 +168,8 @@ describe("on_track webhook -> frontend stream", () => {
     assert.deepEqual(await res.json(), { accepted: true });
   });
 
-  it("URL-based tracking (no gps, config type deferred): 202, nothing pushed, no snapshot, no OSRM call", async () => {
-    const { base, osrm } = startApp();
+  it("URL-based tracking (no gps, config type deferred): pushed with tracking_url and markers, no gps, no OSRM call", async () => {
+    const { base, osrm, cache } = startApp();
     const orderId = newOrderId();
     const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
     const { gps: _gps, path: _path, locationTimestamp: _ts, ...rest } = webhookBody(orderId);
@@ -176,18 +179,45 @@ describe("on_track webhook -> frontend stream", () => {
       config: { attr: "tracking.url", type: "deferred" },
     };
     const before = metricsSnapshot().track;
-    for (const body of [deferred, { ...deferred, gps: null }, { ...deferred, gps: "" }] as Array<Record<string, unknown>>) {
+    const bodies = [deferred, { ...deferred, gps: null }, { ...deferred, gps: "" }] as Array<Record<string, unknown>>;
+    for (const [i, body] of bodies.entries()) {
       const res = await post(`${base}/internal/v1/logistics/on_track`, body);
       assert.equal(res.status, 202, JSON.stringify(body.gps));
       assert.deepEqual(await res.json(), { accepted: true });
+      await s.waitFor(() => s.events.length === i + 1);
     }
+    for (const ev of s.events) {
+      assert.equal(ev.event, "track_update");
+      assert.deepEqual(ev.data, {
+        order_id: orderId,
+        stage: "Order-picked-up",
+        status: "active",
+        tracking_url: "https://lsp.example/track/od1",
+        drop_gps: "28.459469,77.026635",
+        store_gps: "28.49534,77.088059",
+        updated_at: "2026-11-10T05:30:34.472Z",
+      });
+    }
+    const snap = await fetch(`${base}/v1/orders/${orderId}/track`);
+    assert.equal(snap.status, 200);
+    assert.equal(((await snap.json()) as any).tracking_url, "https://lsp.example/track/od1");
+    assert.equal((osrm as FakeOsrm).routeCalls.length + (osrm as FakeOsrm).matchCalls.length, 0);
+    assert.equal(await cache.getCrumbs(orderId), null, "no breadcrumb without a position");
+    const afterSnap = metricsSnapshot().track;
+    assert.equal(afterSnap.webhooks_no_gps - before.webhooks_no_gps, 3);
+    assert.equal(afterSnap.updates_pushed - before.updates_pushed, 3);
+    s.close();
+  });
+
+  it("neither gps nor url: 202, nothing pushed, no snapshot", async () => {
+    const { base } = startApp();
+    const orderId = newOrderId();
+    const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
+    const { gps: _gps, path: _path, ...rest } = webhookBody(orderId);
+    assert.equal((await post(`${base}/internal/v1/logistics/on_track`, rest)).status, 202);
     await new Promise((r) => setTimeout(r, DEADLINE_MS + 50));
     assert.equal(s.events.length, 0);
     assert.equal((await fetch(`${base}/v1/orders/${orderId}/track`)).status, 404);
-    assert.equal((osrm as FakeOsrm).routeCalls.length + (osrm as FakeOsrm).matchCalls.length, 0);
-    const afterSnap = metricsSnapshot().track;
-    assert.equal(afterSnap.webhooks_no_gps - before.webhooks_no_gps, 3);
-    assert.equal(afterSnap.updates_pushed, before.updates_pushed);
     s.close();
   });
 
@@ -213,12 +243,11 @@ describe("on_track webhook -> frontend stream", () => {
       gps_timestamp: "2026-11-10T05:30:32.866Z",
       status: "active",
       route_ahead: { polyline: "_p~iF~ps|U_ulLnnqC", to: "drop", distance_m: 2140, duration_s: 380 },
-      road_path: ev.data.road_path,
+      // No road_path yet: the trail comes from our own breadcrumbs, and one point can't be matched.
       drop_gps: "28.459469,77.026635",
       store_gps: "28.49534,77.088059",
       updated_at: "2026-11-10T05:30:34.472Z",
     });
-    assert.equal(typeof ev.data.road_path, "string");
     assert.deepEqual(b.events[0]!.data, ev.data);
 
     const snap = await fetch(`${base}/v1/orders/${orderId}/track`);
@@ -295,7 +324,7 @@ describe("on_track webhook -> frontend stream", () => {
   });
 
   it("final stage: track_update, then track_closed, the stream ends and the snapshot is dropped", async () => {
-    const { base } = startApp();
+    const { base, cache } = startApp();
     const orderId = newOrderId();
     await post(`${base}/internal/v1/logistics/on_track`, webhookBody(orderId)); // builds a snapshot
     const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
@@ -307,6 +336,7 @@ describe("on_track webhook -> frontend stream", () => {
     assert.deepEqual(s.events[2]!.data, { order_id: orderId, stage: "Order-delivered" });
     assert.equal(s.events[1]!.data.route_ahead, undefined);
     assert.equal((await fetch(`${base}/v1/orders/${orderId}/track`)).status, 404);
+    assert.equal(await cache.getCrumbs(orderId), null, "breadcrumbs cleared on a final stage");
   });
 
   it("order outside every covered box (Mumbai): GPS-only update, OSRM never called", async () => {
@@ -343,8 +373,115 @@ describe("on_track webhook -> frontend stream", () => {
     });
     await s.waitFor(() => s.events.length === 1);
     assert.equal(s.events[0]!.data.route_ahead.to, "drop");
-    assert.equal(typeof s.events[0]!.data.road_path, "string");
     assert.equal(osrm.routeCalls.length, 1);
+    // Second update ~110 m on: the trail appears.
+    await post(`${base}/internal/v1/logistics/on_track`, {
+      ...webhookBody(orderId),
+      gps: "12.9750,77.6134",
+      locationTimestamp: "2026-11-10T05:30:47.866Z",
+      startGps: "12.9716,77.5946",
+      endGps: "12.9352,77.6245",
+    });
+    await s.waitFor(() => s.events.length === 2);
+    assert.equal(typeof s.events[1]!.data.road_path, "string");
+    s.close();
+  });
+});
+
+describe("rider trail from our own breadcrumbs (ROUTE-11: LSP path not used)", () => {
+  /** Workbench-shaped /on_track: one breadcrumb, always sequence "1", equal to gps. ~111 m north per step, 15 s apart. */
+  const workbench = (orderId: string, i: number, extra: Record<string, unknown> = {}) => {
+    const gps = `${(28.43 + i * 0.001).toFixed(6)},77.040000`;
+    return webhookBody(orderId, {
+      gps,
+      path: [{ lat_lng: gps, sequence: "1" }],
+      locationTimestamp: new Date(Date.UTC(2026, 10, 12, 6, 0, i * 15)).toISOString(),
+      updatedAt: new Date(Date.UTC(2026, 10, 12, 6, 0, i * 15 + 1)).toISOString(),
+      ...extra,
+    });
+  };
+  const send = async (base: string, s: Awaited<ReturnType<typeof openSse>>, body: unknown, n: number) => {
+    assert.equal((await post(`${base}/internal/v1/logistics/on_track`, body)).status, 202);
+    await s.waitFor(() => s.events.length === n);
+    return s.events[n - 1]!.data;
+  };
+
+  it('workbench (sequence "1" every time): the trail grows; /match gets only the new tail, with real timestamps', async () => {
+    const osrm = new FakeOsrm();
+    const { base, cache } = startApp({ osrm });
+    const orderId = newOrderId();
+    const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
+
+    assert.equal((await send(base, s, workbench(orderId, 0), 1)).road_path, undefined, "one point: no trail yet");
+    assert.equal(osrm.matchCalls.length, 0);
+    for (let i = 1; i <= 3; i++) {
+      assert.equal(typeof (await send(base, s, workbench(orderId, i), i + 1)).road_path, "string", `update ${i + 1}`);
+    }
+    assert.deepEqual(osrm.matchCalls.map((w) => w.map((p) => p.sequence)), [[1, 2], [2, 3], [3, 4]]);
+    const t0 = Date.UTC(2026, 10, 12, 6, 0, 0) / 1000;
+    assert.deepEqual(osrm.matchCalls[2]!.map((p) => p.unixSeconds), [t0 + 30, t0 + 45]);
+    // Kept as lat/lng on the way in (no swap).
+    assert.deepEqual(osrm.matchCalls[0]![0]!.point, { lat: 28.43, lng: 77.04 });
+    assert.equal((await cache.getCrumbs(orderId))!.points.length, 4);
+    assert.equal((await cache.getTrail(orderId))!.last_seq, 4);
+    s.close();
+  });
+
+  it("the same /on_track twice: no new breadcrumb, no extra /match, the cached trail is resent", async () => {
+    const osrm = new FakeOsrm();
+    const { base, cache } = startApp({ osrm });
+    const orderId = newOrderId();
+    const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
+    await send(base, s, workbench(orderId, 0), 1);
+    const second = await send(base, s, workbench(orderId, 1), 2);
+    const before = metricsSnapshot().track.crumbs_skipped_not_moved;
+    const again = await send(base, s, workbench(orderId, 1), 3);
+    assert.equal(again.road_path, second.road_path);
+    assert.equal(osrm.matchCalls.length, 1);
+    assert.equal((await cache.getCrumbs(orderId))!.points.length, 2);
+    assert.equal(metricsSnapshot().track.crumbs_skipped_not_moved - before, 1);
+    s.close();
+  });
+
+  it("rider standing still (moved < CRUMB_MIN_MOVE_M) or an older timestamp: not added", async () => {
+    const { base, cache } = startApp();
+    const orderId = newOrderId();
+    const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
+    await send(base, s, workbench(orderId, 2), 1);
+    // ~3 m away, 15 s later.
+    await send(base, s, workbench(orderId, 3, { gps: "28.432027,77.040000" }), 2);
+    // ~111 m away but 30 s older than the last point (a late /on_track).
+    await send(base, s, workbench(orderId, 0, { gps: "28.433000,77.040000" }), 3);
+    assert.equal((await cache.getCrumbs(orderId))!.points.length, 1);
+    s.close();
+  });
+
+  it("an LSP sending a full 1..N path every time: still one breadcrumb per update (path[] not used for the trail)", async () => {
+    const osrm = new FakeOsrm();
+    const { base, cache } = startApp({ osrm });
+    const orderId = newOrderId();
+    const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
+    const lspPath = webhookBody(orderId).path;
+    await send(base, s, workbench(orderId, 0, { path: lspPath }), 1);
+    await send(base, s, workbench(orderId, 1, { path: lspPath }), 2);
+    assert.deepEqual((await cache.getCrumbs(orderId))!.points.map((c) => c.seq), [1, 2]);
+    assert.deepEqual(osrm.matchCalls[0]!.map((p) => p.point), [{ lat: 28.43, lng: 77.04 }, { lat: 28.431, lng: 77.04 }]);
+    s.close();
+  });
+
+  it("Redis down (breadcrumbs never stored): every update still arrives, with route_ahead but without road_path", async () => {
+    const cache = new MemoryRouteCache();
+    cache.getCrumbs = async () => null; // what the Redis cache returns on an error
+    cache.setCrumbs = async () => {};
+    const { base } = startApp({ cache });
+    const orderId = newOrderId();
+    const s = await openSse(`${base}/v1/orders/${orderId}/track/events`);
+    for (let i = 0; i < 3; i++) {
+      const data = await send(base, s, workbench(orderId, i), i + 1);
+      assert.equal(data.gps, `${Number((28.43 + i * 0.001).toFixed(6))},77.04`);
+      assert.equal(data.road_path, undefined);
+      assert.equal(data.route_ahead.to, "drop");
+    }
     s.close();
   });
 });
