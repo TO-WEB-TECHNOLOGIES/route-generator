@@ -1,0 +1,16 @@
+$kind: http-request
+description: |-
+  Service mode for the dev page's Features tab (2026-11-12). Only exists when DEV_VIEWER_ENABLED
+  (default on with ENV=TEST); 404 otherwise. Never contains secrets.
+method: GET
+url: '{{baseUrl}}/dev/route-viewer/info'
+order: 4000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 with mode and tunables (404 if the dev page is off)', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json()).to.include.keys('env', 'token_required', 'logistics_configured', 'crumb_min_move_m', 'enrich_deadline_ms');
+      });
+      pm.test('no secrets', () => pm.expect(pm.response.text()).to.not.match(/token"\s*:\s*"|redis/i));

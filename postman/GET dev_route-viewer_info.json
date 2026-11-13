@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "url": "{{baseUrl}}/dev/route-viewer/info",
+  "headers": {},
+  "query": {},
+  "body": null
+}

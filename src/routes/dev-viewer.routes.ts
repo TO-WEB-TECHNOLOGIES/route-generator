@@ -2,6 +2,8 @@
  * GET /dev/route-viewer — a local DEV tool that draws /v1/route and /internal/v1/track/enrich
  * responses, and plays the frontend's live-tracking flow (/v1/track + SSE) on a map, the way the app should (understanding/06): orange route with a navy border,
  * navy trail, markers, dashed straight-line fallback on errors.
+ * The "Features" tab (2026-11-12) lists every feature of the service with a one-click test, and
+ * GET /dev/route-viewer/info tells the page which mode the service runs in (no secrets).
  *
  * Off when NODE_ENV=production unless DEV_VIEWER_ENABLED says otherwise (src/config.ts). The page
  * itself holds no data; its API calls go through the normal token guard with a token typed in the
@@ -61,6 +63,14 @@ const PAGE = `<!doctype html>
   .legend { display:flex; flex-wrap:wrap; gap:10px; font-size:12px; color:var(--muted); margin:10px 0; }
   .sw { display:inline-block; width:18px; height:4px; vertical-align:middle; margin-right:4px; border-radius:2px; }
   .hidden { display:none; }
+  .feat-group { margin:14px 0 4px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .feat { border:1px solid var(--line); border-radius:6px; padding:8px; margin:6px 0; display:grid; grid-template-columns:1fr auto; gap:2px 8px; align-items:center; }
+  .feat b { font-size:13px; }
+  .feat code { font-size:11px; color:var(--muted); grid-column:1; }
+  .feat .d { font-size:12px; color:var(--muted); grid-column:1 / span 2; }
+  .feat button { grid-row:1 / span 2; grid-column:2; padding:6px 12px; border:0; border-radius:6px; background:var(--orange); color:#fff; font-weight:600; cursor:pointer; }
+  #info { font-size:12px; color:var(--muted); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; }
+  #summary a { color:var(--orange); }
   @media (max-width: 800px) { .wrap { grid-template-columns:1fr; height:auto; } #map { height:60vh; } aside { border-right:0; border-bottom:1px solid var(--line); } }
 </style>
 </head>
@@ -74,12 +84,21 @@ const PAGE = `<!doctype html>
   <input id="token" type="password" autocomplete="off" placeholder="empty = no token">
 
   <div class="tabs" style="margin-top:12px">
-    <button id="tab-route" class="on" type="button">Route (2 points)</button>
+    <button id="tab-features" class="on" type="button">Features</button>
+    <button id="tab-route" type="button">Route (2 points)</button>
     <button id="tab-enrich" type="button">Enrich</button>
     <button id="tab-live" type="button">Live order</button>
   </div>
 
-  <div id="pane-route">
+  <div id="pane-features">
+    <p class="hint">Every feature of osrm-bff, one click each. Webhook scenarios use a fresh orderId, open
+      its SSE stream like the frontend, play the logistics side and draw every <code>track_update</code>.
+      Routes need OSRM running; streams need <code>ENV=TEST</code>.</p>
+    <div id="info">Loading service info...</div>
+    <div id="features"></div>
+  </div>
+
+  <div id="pane-route" class="hidden">
     <p class="hint">Click the map to set "from", click again for "to".</p>
     <label for="from">from</label><input id="from" value="28.4950,77.0886">
     <label for="to">to</label><input id="to" value="28.4595,77.0266">
@@ -257,6 +276,7 @@ const PAGE = `<!doctype html>
     layer.clearLayers();
     var rider = pt(u.gps), store = pt(u.store_gps), home = pt(u.drop_gps), all = [rider, store, home];
     var parts = ["stage " + (u.stage || "unknown")];
+    if (!u.gps) parts.push("no gps (URL-based tracking)");
     if (u.road_path) {
       var trail = decode(u.road_path);
       L.polyline(trail, { color: "#1b2a49", weight: 5 }).addTo(layer);
@@ -272,6 +292,11 @@ const PAGE = `<!doctype html>
     }
     marker(store, "#067647", "store"); marker(home, "#ff7a00", "home (drop_gps)"); marker(rider, "#1b2a49", "rider");
     $("summary").textContent = parts.join(" · ");
+    if (u.tracking_url) {
+      var a = document.createElement("a");
+      a.href = u.tracking_url; a.target = "_blank"; a.rel = "noopener"; a.textContent = " · tracking_url";
+      $("summary").appendChild(a);
+    }
     fit(all);
   }
   async function requestTrack() {
@@ -328,12 +353,151 @@ const PAGE = `<!doctype html>
     if (next === "to") drawRoute();
     next = next === "from" ? "to" : "from";
   });
+
+  // ---- Features tab (2026-11-12): every feature, one click each ----
+  // No backticks, no dollar-brace, no backslashes: this script sits inside a TS template literal.
+  var SERVICE = {};
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function freshId(prefix) { return prefix + "-" + Date.now().toString(36); }
+  var BLR = { pts: ["12.973000,77.612000", "12.974000,77.613400", "12.975100,77.614300"], store: "12.971600,77.594600", home: "12.935200,77.624500" };
+  var MUMBAI = { pts: ["19.076000,72.877700", "19.077000,72.878700"], store: "19.070000,72.870000", home: "19.080000,72.880000" };
+  var NCR = { pts: SIM_PTS, store: SIM_PTS[0], home: SIM_HOME };
+
+  // Workbench-shaped /on_track: one breadcrumb, always sequence "1", equal to gps. 15 s apart.
+  function onTrack(id, area, i, extra) {
+    var t0 = onTrack.t0 || (onTrack.t0 = Date.now());
+    var gps = area.pts[Math.min(i, area.pts.length - 1)];
+    var body = {
+      event: "order_tracking", transactionId: "dev-viewer", orderId: id, status: "active", gps: gps,
+      locationTimestamp: new Date(t0 + i * 15000).toISOString(), updatedAt: new Date(t0 + i * 15000 + 500).toISOString(),
+      path: [{ lat_lng: gps, sequence: "1" }], config: { attr: "tracking.location.gps", type: "live_poll" },
+      fulfillmentState: "Order-picked-up", startGps: area.store, endGps: area.home
+    };
+    Object.keys(extra || {}).forEach(function (k) { if (extra[k] === undefined) delete body[k]; else body[k] = extra[k]; });
+    return body;
+  }
+  async function postWebhook(body) {
+    var res = await fetch("/internal/v1/logistics/on_track", { method: "POST", headers: headers(true), body: JSON.stringify(body) });
+    return res.status + " " + (await res.text());
+  }
+  function openStream(id) {
+    stopLive();
+    return new Promise(function (resolve) {
+      es = new EventSource("/v1/orders/" + encodeURIComponent(id) + "/track/events");
+      es.onopen = function () { log("stream open for " + id); resolve(); };
+      es.addEventListener("track_update", function (e) {
+        var u = JSON.parse(e.data);
+        drawUpdate(u);
+        log("track_update " + new Date().toLocaleTimeString() + " " + JSON.stringify(u, null, 2));
+      });
+      es.addEventListener("track_closed", function (e) { log("track_closed " + e.data + " (stream ended)"); stopLive(); });
+      es.onerror = function () { log("stream error (401 = the stream needs ENV=TEST)"); resolve(); };
+      setTimeout(resolve, 1500);
+    });
+  }
+  async function scenario(title, prefix, bodies, after) {
+    layer.clearLayers(); $("out").textContent = ""; $("summary").textContent = "";
+    $("status").className = "status"; $("status").textContent = "Running: " + title;
+    var id = freshId(prefix);
+    onTrack.t0 = Date.now();
+    try {
+      await openStream(id);
+      for (var i = 0; i < bodies.length; i++) {
+        var b = bodies[i](id);
+        log("on_track #" + (i + 1) + " -> " + (await postWebhook(b)));
+        await sleep(900);
+      }
+      if (after) await after(id);
+      $("status").className = "status ok"; $("status").textContent = "Done: " + title + " (order " + id + ")";
+    } catch (e) { fail(e); }
+  }
+  async function metricLine(keys) {
+    var r = await fetch("/metrics"); var m = await r.json(); var t = m.track || {};
+    log("metrics.track: " + keys.map(function (k) { return k + "=" + t[k]; }).join(", "));
+  }
+  function routeTry(from, to) {
+    return function () { tab("route"); $("from").value = from; $("to").value = to; drawRoute(); };
+  }
+  function getJson(url) { return function () { layer.clearLayers(); $("summary").textContent = ""; call(url, { headers: headers(false) }).catch(fail); }; }
+  function enrichTry(stage) {
+    return function () {
+      tab("enrich");
+      var req = JSON.parse(SAMPLE); req.order_id = freshId("enrich"); req.stage = stage;
+      $("body").value = JSON.stringify(req, null, 2); drawEnrich();
+    };
+  }
+  function step(area, i, extra) { return function (id) { return onTrack(id, area, i, extra); }; }
+
+  var FEATURES = [
+    { g: "Service", t: "Health", m: "GET /health", d: "Liveness only. Never checks OSRM, so a dead OSRM never takes the service down.", run: getJson("/health") },
+    { g: "Service", t: "Metrics", m: "GET /metrics", d: "OSRM latency and outcomes, logistics calls, webhooks, pushes, breadcrumbs added/skipped, open streams.", run: getJson("/metrics") },
+    { g: "Service", t: "Service mode", m: "GET /dev/route-viewer/info", d: "ENV, token, logistics, tunables. Dev page only, no secrets.", run: getJson("/dev/route-viewer/info") },
+
+    { g: "Road route (two points)", t: "Delhi NCR", m: "GET /v1/route", d: "Store to home in Gurugram. Orange line with navy border, distance and time (display only).", run: routeTry("28.4950,77.0886", "28.4595,77.0266") },
+    { g: "Road route (two points)", t: "Bengaluru", m: "GET /v1/route", d: "Second covered region (since 2026-11-10).", run: routeTry(BLR.pts[0], BLR.home) },
+    { g: "Road route (two points)", t: "Outside coverage", m: "GET /v1/route -> 422", d: "Mumbai: never sent to OSRM, which would snap it to a road far away.", run: routeTry(MUMBAI.pts[0], MUMBAI.home) },
+    { g: "Road route (two points)", t: "Bad input", m: "GET /v1/route -> 400", d: "Malformed coordinates.", run: routeTry("garbage", "28.4595,77.0266") },
+
+    { g: "Enrich (BFF / ondc-api path)", t: "Out for delivery", m: "POST /internal/v1/track/enrich", d: "route_ahead to the drop + road_path from the request's path[] + drop_gps.", run: enrichTry("Out-for-delivery") },
+    { g: "Enrich (BFF / ondc-api path)", t: "Before pickup", m: "POST /internal/v1/track/enrich", d: "Agent-assigned: the route goes to the store.", run: enrichTry("Agent-assigned") },
+    { g: "Enrich (BFF / ondc-api path)", t: "Delivered", m: "POST /internal/v1/track/enrich", d: "Final stage: no route_ahead, cache cleared.", run: enrichTry("Order-delivered") },
+
+    { g: "Frontend API", t: "Request tracking", m: "POST /v1/track", d: "Forwards { orderId } to ondc-logistics-api POST /logistics/track (orderId from the Live order tab). 503 if logistics isn't configured.", run: function () { tab("live"); requestTrack(); } },
+    { g: "Frontend API", t: "Latest update (snapshot)", m: "GET /v1/orders/:orderId/track", d: "The last track_update for the Live order tab's orderId; 404 before the first one.", run: function () { getJson("/v1/orders/" + encodeURIComponent($("order").value.trim()) + "/track")(); } },
+    { g: "Frontend API", t: "Live stream", m: "GET /v1/orders/:orderId/track/events", d: "SSE: track_update per /on_track, track_closed at a final stage. Opens the Live order tab.", run: function () { tab("live"); startLive(); } },
+
+    { g: "Logistics webhook scenarios", t: "Trail grows (workbench)", m: "POST /internal/v1/logistics/on_track x5", d: "Workbench shape: one breadcrumb, always sequence 1. Our own breadcrumbs make the navy trail grow from update 2.",
+      run: function () { scenario("trail grows", "trail", [0, 1, 2, 3, 4].map(function (i) { return step(NCR, i); }), function () { return metricLine(["crumbs_added", "crumbs_skipped_not_moved", "crumbs_skipped_older"]); }); } },
+    { g: "Logistics webhook scenarios", t: "Same update twice", m: "on_track x3", d: "The repeat adds no breadcrumb and no OSRM call; the cached trail is resent.",
+      run: function () { scenario("same update twice", "dup", [step(NCR, 0), step(NCR, 1), step(NCR, 1)], function () { return metricLine(["crumbs_added", "crumbs_skipped_not_moved"]); }); } },
+    { g: "Logistics webhook scenarios", t: "Rider standing still", m: "on_track x3", d: "Moves of about 3 m (under CRUMB_MIN_MOVE_M) are not added to the trail.",
+      run: function () { scenario("standing still", "still", [step(NCR, 0), step(NCR, 1, { gps: "28.495370,77.088059" }), step(NCR, 2, { gps: "28.495350,77.088079" })], function () { return metricLine(["crumbs_skipped_not_moved"]); }); } },
+    { g: "Logistics webhook scenarios", t: "URL-based tracking", m: "on_track without gps", d: "LSP sends only a tracking URL: pushed with tracking_url and the markers, no gps, no routes.",
+      run: function () { scenario("URL-based tracking", "url", [step(NCR, 0, { gps: undefined, path: undefined, locationTimestamp: undefined, url: "https://example.com/lsp-tracking/demo", config: { attr: "tracking.url", type: "deferred" } })]); } },
+    { g: "Logistics webhook scenarios", t: "Bengaluru order", m: "on_track x3", d: "Route ahead and trail in the second region.",
+      run: function () { scenario("Bengaluru", "blr", [0, 1, 2].map(function (i) { return step(BLR, i); })); } },
+    { g: "Logistics webhook scenarios", t: "Outside coverage", m: "on_track x2", d: "Mumbai rider: GPS-only updates, OSRM never called (the app draws straight lines).",
+      run: function () { scenario("outside coverage", "out", [0, 1].map(function (i) { return step(MUMBAI, i); })); } },
+    { g: "Logistics webhook scenarios", t: "No stage in payload", m: "on_track without fulfillmentState", d: "Falls back to GET /logistics/orders/:id/status; without logistics, no route_ahead.",
+      run: function () { scenario("no stage", "nostage", [step(NCR, 0, { fulfillmentState: undefined })]); } },
+    { g: "Logistics webhook scenarios", t: "Order delivered", m: "on_track x3", d: "Two updates, then Order-delivered: track_closed, the stream ends, snapshot and caches dropped.",
+      run: function () { scenario("delivered", "done", [step(NCR, 0), step(NCR, 1), step(NCR, 2, { fulfillmentState: "Order-delivered" })]); } },
+    { g: "Logistics webhook scenarios", t: "Bad body", m: "on_track -> 400", d: "A gps that isn't 'lat,lng' is a sender bug: 400, nothing pushed.",
+      run: async function () { layer.clearLayers(); try { await call("/internal/v1/logistics/on_track", { method: "POST", headers: headers(true), body: JSON.stringify({ orderId: "bad-1", gps: "garbage" }) }); } catch (e) { fail(e); } } }
+  ];
+
+  (function renderFeatures() {
+    var box = $("features"), group = "";
+    FEATURES.forEach(function (f) {
+      if (f.g !== group) {
+        group = f.g;
+        var h = document.createElement("div"); h.className = "feat-group"; h.textContent = group; box.appendChild(h);
+      }
+      var row = document.createElement("div"); row.className = "feat";
+      var b = document.createElement("b"); b.textContent = f.t;
+      var btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Try"; btn.onclick = f.run;
+      var m = document.createElement("code"); m.textContent = f.m;
+      var d = document.createElement("div"); d.className = "d"; d.textContent = f.d;
+      row.appendChild(b); row.appendChild(btn); row.appendChild(m); row.appendChild(d);
+      box.appendChild(row);
+    });
+  })();
+
+  fetch("/dev/route-viewer/info").then(function (r) { return r.json(); }).then(function (i) {
+    SERVICE = i;
+    var warn = i.token_required ? " Token required: streams won't open in the browser (use ENV=TEST)." : "";
+    $("info").textContent = "ENV=" + i.env + " · token " + (i.token_required ? "required" : "not checked") +
+      " · logistics " + (i.logistics_configured ? "configured" : "not configured (POST /v1/track answers 503)") +
+      " · re-route " + i.reroute_threshold_m + " m · breadcrumb min move " + i.crumb_min_move_m + " m · deadline " + i.enrich_deadline_ms + " ms." + warn;
+  }).catch(function () { $("info").textContent = "Service info unavailable."; });
+
   function tab(which) {
-    ["route", "enrich", "live"].forEach(function (t) {
+    ["features", "route", "enrich", "live"].forEach(function (t) {
       $("tab-" + t).classList.toggle("on", which === t);
       $("pane-" + t).classList.toggle("hidden", which !== t);
     });
   }
+  $("tab-features").onclick = function () { tab("features"); };
   $("tab-route").onclick = function () { tab("route"); };
   $("tab-enrich").onclick = function () { tab("enrich"); };
   $("tab-live").onclick = function () { tab("live"); };
@@ -347,10 +511,27 @@ const PAGE = `<!doctype html>
 </body>
 </html>`;
 
-export function devViewerRouter(): Router {
+/** What the Features tab shows about the running service. Never secrets (no token, no Redis URL). */
+export interface DevViewerInfo {
+  env: string;
+  token_required: boolean;
+  logistics_configured: boolean;
+  coverage: string;
+  reroute_threshold_m: number;
+  crumb_min_move_m: number;
+  crumbs_max_points: number;
+  match_min_confidence: number;
+  osrm_timeout_ms: number;
+  enrich_deadline_ms: number;
+}
+
+export function devViewerRouter(info?: DevViewerInfo): Router {
   const router = Router();
   router.get("/", (_req, res) => {
     res.type("html").send(PAGE);
+  });
+  router.get("/info", (_req, res) => {
+    res.json(info ?? {});
   });
   return router;
 }
