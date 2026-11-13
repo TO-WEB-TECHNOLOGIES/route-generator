@@ -15,7 +15,9 @@ description: |-
     to IPv6 ::1).
   - internalToken: same value as INTERNAL_TOKEN in the service's .env (empty if none).
   - flowOrderId, routePolyline1, roadPath1, roadPath2: set by the "03 enrich" scripts at run time.
-  - trackOrderId: set by "05 track" step 1.
+  - trackOrderId: set by "05 track" step 1; workbenchOrderId (step 5) and urlOrderId (step 8) likewise.
+  - liveOrderId, liveFrom, liveTo, liveSteps: "06 live map demo" (match /dev/live-map's defaults);
+    liveStep, liveGps, liveTs, livePolyline, liveRouteKey are set by its scripts.
 
   Folders run top to bottom. "03 enrich: order lifecycle" must run in order: each step builds on
   the cache state of the previous one, under a fresh order id per run.
@@ -45,6 +47,18 @@ variables:
   - key: trackOrderId
     value: 'pm-track-manual'
     description: Order id for "05 track"; step 1 replaces it with a fresh one each run.
+  - key: liveOrderId
+    value: 'live-demo-1'
+    description: Order id for "06 live map demo"; same as the /dev/live-map page default.
+  - key: liveFrom
+    value: '28.495340,77.088059'
+    description: '"06 live map demo" store ("lat,lng"); same as the page default.'
+  - key: liveTo
+    value: '28.459469,77.026635'
+    description: '"06 live map demo" drop ("lat,lng"); same as the page default.'
+  - key: liveSteps
+    value: '8'
+    description: How many on_track sends "06 live map demo" step 2 takes to reach the drop.
 scripts:
   - type: http:beforeRequest
     language: text/javascript

@@ -222,6 +222,33 @@ describe("GET / and GET /health", () => {
   });
 });
 
+describe("GET /dev/live-map", () => {
+  it("is not served unless enabled", async () => {
+    assert.equal((await fetch(`${baseUrl}/dev/live-map`)).status, 404);
+  });
+
+  it("serves the page without a token when enabled: script parses, no OSRM or public router call", async () => {
+    const app = createApp({ deps: makeDeps({ coverage: COVERAGE }), internalToken: "t0ken", devViewer: true });
+    const server = app.listen(0);
+    try {
+      const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/dev/live-map?orderId=x`);
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get("content-type") ?? "", /text\/html/);
+      const html = await res.text();
+      assert.match(html, /<title>Live map \(dev\)<\/title>/);
+      // Reads only existing endpoints; never asks the LSP (POST /v1/track) or the public demo server.
+      for (const used of ["/v1/route?from=", "/track/events", "track_update", "track_closed"]) assert.ok(html.includes(used), used);
+      assert.ok(!html.includes('"/v1/track"'), "must not call POST /v1/track");
+      assert.doesNotMatch(html, /router\.project-osrm\.org/);
+      const script = html.split("<script>")[1]!.split("</script>")[0]!;
+      assert.doesNotThrow(() => new Function(script), "page script must parse");
+      assert.equal(urls.length, 0);
+    } finally {
+      server.close();
+    }
+  });
+});
+
 describe("GET /dev/route-viewer", () => {
   it("is not served unless enabled", async () => {
     // The shared app in this file is created without devViewer.
@@ -239,6 +266,33 @@ describe("GET /dev/route-viewer", () => {
       assert.match(html, /<title>Route viewer \(dev\)<\/title>/);
       assert.doesNotMatch(html, /router\.project-osrm\.org/);
       assert.equal(urls.length, 0);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("Features tab: lists every route, its page script parses, /info shows the mode and no secrets", async () => {
+    const info = {
+      env: "TEST", token_required: false, logistics_configured: true, coverage: "on", reroute_threshold_m: 30,
+      crumb_min_move_m: 10, crumbs_max_points: 120, match_min_confidence: 0.5, osrm_timeout_ms: 1000, enrich_deadline_ms: 1200,
+    };
+    const app = createApp({ deps: makeDeps({ coverage: COVERAGE }), internalToken: "t0ken", devViewer: true, devViewerInfo: info });
+    const server = app.listen(0);
+    try {
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const html = await (await fetch(`${base}/dev/route-viewer`)).text();
+      for (const route of [
+        "GET /health", "GET /metrics", "GET /dev/route-viewer/info", "GET /v1/route", "POST /internal/v1/track/enrich",
+        "POST /v1/track", "GET /v1/orders/:orderId/track", "GET /v1/orders/:orderId/track/events", "POST /internal/v1/logistics/on_track",
+      ]) assert.ok(html.includes(route), `Features tab lists ${route}`);
+      const script = html.split("<script>")[1]!.split("</script>")[0]!;
+      assert.doesNotThrow(() => new Function(script), "page script must parse");
+
+      const res = await fetch(`${base}/dev/route-viewer/info`);
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.deepEqual(body, info);
+      assert.doesNotMatch(JSON.stringify(body), /t0ken|redis/i);
     } finally {
       server.close();
     }

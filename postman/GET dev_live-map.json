@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "url": "{{baseUrl}}/dev/live-map",
+  "headers": {},
+  "query": { "orderId": "live-demo-1", "from": "28.495340,77.088059", "to": "28.459469,77.026635", "autostart": "1" },
+  "body": null
+}

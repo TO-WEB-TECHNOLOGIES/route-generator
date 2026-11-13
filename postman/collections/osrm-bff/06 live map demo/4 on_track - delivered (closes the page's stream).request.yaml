@@ -1,0 +1,32 @@
+$kind: http-request
+description: Final stage at the drop. The page shows Order-delivered and its stream ends (track_closed).
+method: POST
+url: '{{baseUrl}}/internal/v1/logistics/on_track'
+order: 4000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "event": "order_tracking",
+      "orderId": "{{liveOrderId}}",
+      "status": "active",
+      "gps": "{{liveTo}}",
+      "locationTimestamp": "{{$isoTimestamp}}",
+      "path": [{ "lat_lng": "{{liveTo}}", "sequence": "1" }],
+      "updatedAt": "{{$isoTimestamp}}",
+      "config": { "attr": "tracking.location.gps", "type": "live_poll" },
+      "fulfillmentState": "Order-delivered",
+      "startGps": "{{liveFrom}}",
+      "endGps": "{{liveTo}}"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('202 { accepted: true }', () => pm.response.to.have.status(202));
+      pm.collectionVariables.set('liveStep', '0');

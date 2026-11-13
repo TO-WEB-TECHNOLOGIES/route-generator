@@ -92,19 +92,26 @@ data: {"order_id":"od26111026c0dd67","stage":"Order-delivered"}
 | Field | Type | Always? | Draw |
 |---|---|---|---|
 | `order_id` | string | yes | |
-| `gps` | `"lat,lng"` | yes | Rider marker (animate old → new over ~1 s) |
+| `gps` | `"lat,lng"` | **no** (since 2026-11-12) | Rider marker (animate old → new over ~1 s). **Missing = URL-based tracking**: the LSP gives no position, only `tracking_url` (see below) |
 | `updated_at` | ISO 8601 | yes | |
 | `stage` | string | no | Status label. ONDC fulfillment state (`Order-picked-up`, `Out-for-delivery`, …) |
 | `gps_timestamp` | ISO 8601 | no | "Updated 20 s ago"; grey the rider out if older than ~2 min |
 | `status` | string | no | LSP tracking status (`active`, …) |
-| `tracking_url` | string | no | Fallback web view when there's no live GPS |
+| `tracking_url` | string | no | The LSP's tracking page. Show it as "Track on partner site" when there's no `gps` |
 | `route_ahead` | object | no | Rider → destination. Orange `#FF7A00` width 5 over navy `#1B2A49` width 8 |
 | `route_ahead.polyline` | string | | Decode, precision 5 |
 | `route_ahead.to` | `"store"` \| `"drop"` | | Which marker the line ends at |
 | `route_ahead.distance_m` / `duration_s` | number | | "2.1 km · 6 min". **Display-only**, not the official ETA |
-| `road_path` | string | no | Trail so far, snapped to roads. Navy, width 5, below the route |
+| `road_path` | string | no | Trail so far, snapped to roads. Navy, width 5, below the route. Built from the rider positions we receive (one per update, 2026-11-12), so it first appears on the order's **second** update with movement and grows from there |
 | `drop_gps` | `"lat,lng"` | no | Home marker |
 | `store_gps` | `"lat,lng"` | no | Store marker |
+
+**URL-based tracking (2026-11-12).** Some LSPs track by URL only (ONDC config `deferred`). Their
+updates have `tracking_url`, `stage`, `status`, `store_gps`, `drop_gps` and **no `gps`**, so there's no
+rider marker and no `route_ahead` / `road_path` (nothing to route from). Keep the store and home
+markers, draw the dashed straight line store → home, and show the link. Don't move or clear a rider
+marker you drew from an earlier update; grey it out instead. **Breaking for clients that assumed
+`gps` is always there.**
 
 **Any field missing = not available this update, never an error.** No `route_ahead`: draw a dashed
 straight line rider → destination. No `road_path`: draw nothing. Routes only exist inside the
@@ -165,3 +172,9 @@ const poll = setInterval(requestTrack, 15_000);
 
 Drawing details (styles, fallbacks, camera, marker animation): `understanding/06-drawing-the-map-on-the-app.md`.
 Try the whole flow locally in the **Live order** tab of `http://127.0.0.1:4100/dev/route-viewer`.
+
+To watch a driver move without the logistics API (2026-11-13): open
+`http://127.0.0.1:4100/dev/live-map?orderId=live-demo-1`, press Start (the road route between the
+two points appears), then send the Postman folder "06 live map demo" (or any forwarded `/on_track`
+for that `orderId`). Each update moves the driver and redraws the route from its new position.
+Dev only, like the route viewer.

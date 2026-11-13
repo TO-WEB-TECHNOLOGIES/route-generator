@@ -1,0 +1,15 @@
+$kind: collection
+name: '06 live map demo'
+description: |-
+  Drives the dev live map (GET /dev/live-map, 2026-11-13) from Postman: a driver walks from
+  liveFrom (store) to liveTo (drop) along the real road route, one forwarded /on_track per step.
+
+  1. Open http://127.0.0.1:4100/dev/live-map?orderId=live-demo-1 (the page defaults match
+     liveOrderId, liveFrom, liveTo) and press Start: the planned route appears.
+  2. Send "1 reset". Then send "2 on_track - next point" again and again: the driver moves each
+     time. In the collection runner it repeats by itself until the driver reaches the drop.
+  3. "4 on_track - delivered" closes the order: the page shows the final stage, the stream ends.
+
+  Step 2 fetches GET /v1/route once per reset and walks it by distance in liveSteps steps, so
+  every point is on a road. Needs OSRM and Redis running, and ENV=TEST for the page's stream.
+order: 6000

@@ -34,11 +34,24 @@ setOpenStreamsGauge(() => hub.openStreams());
 const app = createApp({
   internalToken: config.internalToken,
   devViewer: config.devViewerEnabled,
+  devViewerInfo: {
+    env: config.env,
+    token_required: Boolean(config.internalToken),
+    logistics_configured: Boolean(config.logisticsBaseUrl),
+    coverage: config.coverage ? "on" : "none",
+    reroute_threshold_m: config.rerouteThresholdM,
+    crumb_min_move_m: config.crumbMinMoveM,
+    crumbs_max_points: config.crumbsMaxPoints,
+    match_min_confidence: config.matchMinConfidence,
+    osrm_timeout_ms: config.osrmTimeoutMs,
+    enrich_deadline_ms: config.enrichDeadlineMs,
+  },
   track: {
     logistics: createHttpLogisticsClient({ baseUrl: config.logisticsBaseUrl, timeoutMs: config.logisticsTimeoutMs }),
     hub,
     snapshots: createRedisTrackSnapshotStore(redis),
     enrichDeadlineMs: config.enrichDeadlineMs,
+    crumbs: { minMoveM: config.crumbMinMoveM, maxPoints: config.crumbsMaxPoints },
   },
   deps: {
     osrm: createHttpOsrmClient({
@@ -70,7 +83,10 @@ const server = app.listen(config.port, () => {
   if (config.keepaliveUrl) {
     stopKeepalive = startKeepalive({ url: config.keepaliveUrl, intervalMs: config.keepaliveIntervalMs, timeoutMs: 10_000 });
   }
-  if (config.devViewerEnabled) logger.info("server", "dev route viewer", { url: `http://127.0.0.1:${config.port}/dev/route-viewer` });
+  if (config.devViewerEnabled) {
+    logger.info("server", "dev route viewer", { url: `http://127.0.0.1:${config.port}/dev/route-viewer` });
+    logger.info("server", "dev live map", { url: `http://127.0.0.1:${config.port}/dev/live-map` });
+  }
 });
 
 function shutdown(signal: string) {

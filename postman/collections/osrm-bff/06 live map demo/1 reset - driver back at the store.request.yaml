@@ -1,0 +1,18 @@
+$kind: http-request
+description: |-
+  Resets the demo's step counter and cached route (a health call carries the script). On the
+  live map page, press Start again to clear the map.
+method: GET
+url: '{{baseUrl}}/health'
+order: 1000
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      pm.collectionVariables.set('liveStep', '0');
+      pm.collectionVariables.unset('livePolyline');
+      pm.collectionVariables.unset('liveRouteKey');
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('service is up', () => pm.response.to.have.status(200));

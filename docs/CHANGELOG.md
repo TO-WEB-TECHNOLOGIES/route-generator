@@ -32,6 +32,11 @@ problems live in `docs/ARCHITECTURE_REVIEW.md`, not here.
 | 2026-11-10 | OPS | Keep-alive self-ping (`src/keepalive.ts`): GETs our public `/health` every 10 min; on by default on Render (`RENDER_EXTERNAL_URL`). |
 | 2026-11-10 | DOCS | `docs/deployment/render-design.md` (why each Render choice, alternatives), `docs/integration-docs/calling-the-api.md` (base URL, token, endpoints, route examples), Render Postman environment. |
 | 2026-11-11 | API | Logistics webhook: a forward with no `gps` (URL-based / `deferred` tracking) now gets 202 and pushes nothing, instead of a 400; counted as `track.webhooks_no_gps`. |
+| 2026-11-12 | INT-04 | ondc-logistics-api now forwards each processed `/on_track` with `fulfillmentState`, `startGps`, `endGps` (their `c1eb3fb`); checked read-only against `LOGISTICS_API_CHANGES.md`. |
+| 2026-11-12 | ROUTE-11 | Logistics trail built from our own breadcrumbs (`route:crumbs:*`, one per forwarded `gps`, real timestamps) instead of the LSP's `path[]`, whose repeating sequence `"1"` froze `road_path`. |
+| 2026-11-12 | API | URL-based tracking reaches the frontend: a webhook with `url` and no `gps` is pushed as `track_update` with `tracking_url` (`gps` now optional there; breaking for clients that assumed it). Replaces the 2026-11-11 "pushes nothing" rule. |
+| 2026-11-12 | DEV | Dev page "Features" tab: every route and webhook scenario with a one-click test, plus `GET /dev/route-viewer/info` (mode and tunables, no secrets). |
+| 2026-11-13 | DEV | Dev page `GET /dev/live-map`: road route between two points, driver marker glides to each forwarded `/on_track`'s `gps` (SSE); Postman folder "06 live map demo" walks a driver along the route. |
 
 ---
 

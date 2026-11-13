@@ -1,0 +1,26 @@
+$kind: http-request
+description: The last track_update the page got, read back from the snapshot.
+method: GET
+url: '{{baseUrl}}/v1/orders/{{liveOrderId}}/track'
+order: 3000
+headers:
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      setTimeout(() => {}, 1500);
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      const u = pm.response.json();
+      const same = (a, b) => a.split(',').every((v, i) => Math.abs(Number(v) - Number(b.split(',')[i])) < 1e-6);
+      pm.test('200, driver at the last point sent', () => {
+        pm.response.to.have.status(200);
+        pm.expect(same(u.gps, pm.collectionVariables.get('liveGps'))).to.be.true;
+      });
+      pm.test('store and home markers present', () => {
+        pm.expect(u.store_gps).to.be.a('string');
+        pm.expect(u.drop_gps).to.be.a('string');
+      });

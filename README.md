@@ -44,6 +44,7 @@ npm run smoke -- http://127.0.0.1:5000   # 127.0.0.1, not localhost: on Windows 
 | `GET /`, `GET /health` | Liveness (no dependency checks) |
 | `GET /metrics` | OSRM call outcomes and latency |
 | `GET /dev/route-viewer` | **Dev only** (`DEV_VIEWER_ENABLED`, off in production): map page that draws `/v1/route` and enrich responses the way the app should. Open `http://127.0.0.1:4100/dev/route-viewer` |
+| `GET /dev/live-map` | **Dev only** (same switch): pick two points, see the road route, then the driver moves for every forwarded `/on_track` of the `orderId`. Drive it with Postman folder "06 live map demo". Open `http://127.0.0.1:4100/dev/live-map` |
 
 How the app should draw these responses: `understanding/06-drawing-the-map-on-the-app.md`.
 

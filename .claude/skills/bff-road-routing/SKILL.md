@@ -36,6 +36,7 @@ The routing logic lives in its own service (`osrm-bff`), which sits next to the 
 | Two-point route endpoint `GET /v1/route` | `src/routes/route.routes.ts` |
 | Live tracking: `/v1/track` forward, logistics `/on_track` webhook, SSE push | `src/routes/track.routes.ts`, `src/routes/logistics-webhook.routes.ts`, `src/tracking/` |
 | Logistics event types, mapper, HTTP client | `src/logistics/` |
+| Dev pages (Leaflet, dev only): route viewer, live map (route + driver moving per `/on_track`) | `src/routes/dev-viewer.routes.ts`, `src/routes/dev-live-map.routes.ts` |
 | Tunables (timeouts, thresholds, coverage, match radius) | `src/config.ts` |
 | Internal API contracts | `docs/integration-docs/track-enrich.md`, `docs/integration-docs/route.md` |
 
@@ -86,7 +87,11 @@ GET http://osrm:5000/match/v1/driving/{lng,lat;lng,lat;...}?timestamps={t1;t2;..
 
 Timestamps are Unix seconds and must not decrease. ONDC breadcrumbs from the logistics API carry
 none. osrm-bff then omits `timestamps` entirely (OSRM wants one per point or none) and matches on
-geometry alone, ordered by `sequence`. Match only the new tail on each update: keep the already-matched polyline and last matched sequence in Redis, match from a point or two before that sequence (so the pieces join), and append. Don't re-match the whole trail each time; it grows with the order and gets slower.
+geometry alone, ordered by `sequence`. **On the logistics path (2026-11-12) the trail does not use the LSP's `path[]` at all:** its
+`sequence` repeats (the workbench sends one point numbered `"1"` every time) and its order isn't
+defined by the spec. osrm-bff records each forwarded `gps` + `locationTimestamp` as its own
+breadcrumb (`src/tracking/crumbs.ts`, numbered by us, skipped if older or moved < `CRUMB_MIN_MOVE_M`)
+and matches those, with real timestamps. Match only the new tail on each update: keep the already-matched polyline and last matched sequence in Redis, match from a point or two before that sequence (so the pieces join), and append. Don't re-match the whole trail each time; it grows with the order and gets slower.
 
 If OSRM returns no matching or a low `confidence`, leave `road_path` out for that update rather than sending a bad line. The threshold isn't fixed in the design yet; make it a config value and note what you chose.
 
@@ -96,6 +101,7 @@ If OSRM returns no matching or a low `confidence`, leave `road_path` out for tha
 |---|---|---|
 | `route:ahead:{order_id}` | polyline, distance_m, duration_s, rider point and stage it was built from | 2 h |
 | `route:trail:{order_id}` | matched trail polyline + last matched sequence | 2 h |
+| `route:crumbs:{order_id}` | logistics path only: our own breadcrumbs (`lat`, `lng`, `t`, `seq`) | 2 h |
 
 Store the rider point and stage with the route ahead; the 30 m / stage-change check needs them.
 

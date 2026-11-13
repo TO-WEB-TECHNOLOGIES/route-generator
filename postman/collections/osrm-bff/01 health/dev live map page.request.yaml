@@ -1,0 +1,16 @@
+$kind: http-request
+description: |-
+  Dev page (2026-11-13): road route between two points, then the driver moves for every forwarded
+  /on_track of the orderId. Open the URL in a browser; drive it with "06 live map demo". Only
+  exists when DEV_VIEWER_ENABLED (default on with ENV=TEST); 404 otherwise.
+method: GET
+url: '{{baseUrl}}/dev/live-map?orderId={{liveOrderId}}'
+order: 4100
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 HTML page (404 if the dev pages are off)', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.text()).to.include('<title>Live map (dev)</title>');
+      });

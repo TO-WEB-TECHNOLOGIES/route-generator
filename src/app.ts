@@ -1,7 +1,8 @@
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { logger } from "./logger.js";
 import { metricsSnapshot } from "./metrics.js";
-import { devViewerRouter } from "./routes/dev-viewer.routes.js";
+import { devLiveMapRouter } from "./routes/dev-live-map.routes.js";
+import { devViewerRouter, type DevViewerInfo } from "./routes/dev-viewer.routes.js";
 import { enrichRouter } from "./routes/enrich.routes.js";
 import { logisticsWebhookRouter } from "./routes/logistics-webhook.routes.js";
 import { routeRouter } from "./routes/route.routes.js";
@@ -12,8 +13,10 @@ import type { TrackDeps } from "./tracking/service.js";
 export interface AppOptions {
   deps: EnrichDeps;
   internalToken?: string | undefined;
-  /** Serve the dev map page at /dev/route-viewer (src/routes/dev-viewer.routes.ts). */
+  /** Serve the dev map pages /dev/route-viewer and /dev/live-map (src/routes/dev-*.routes.ts). */
   devViewer?: boolean | undefined;
+  /** Shown by GET /dev/route-viewer/info (the page's Features tab). No secrets. */
+  devViewerInfo?: DevViewerInfo | undefined;
   /** Live tracking via ondc-logistics-api (/v1/track*, the on_track webhook). Unset = not mounted. */
   track?: Omit<TrackDeps, "enrich"> | undefined;
 }
@@ -33,7 +36,7 @@ function requireInternalToken(token: string | undefined): RequestHandler {
   };
 }
 
-export function createApp({ deps, internalToken, devViewer = false, track }: AppOptions) {
+export function createApp({ deps, internalToken, devViewer = false, devViewerInfo, track }: AppOptions) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "256kb" }));
@@ -49,7 +52,10 @@ export function createApp({ deps, internalToken, devViewer = false, track }: App
   });
 
   // Dev only: the page itself is static; its API calls go through the guard below.
-  if (devViewer) app.use("/dev/route-viewer", devViewerRouter());
+  if (devViewer) {
+    app.use("/dev/route-viewer", devViewerRouter(devViewerInfo));
+    app.use("/dev/live-map", devLiveMapRouter());
+  }
 
   app.use("/v1/route", guard, routeRouter({ osrm: deps.osrm, coverage: deps.coverage }));
   if (track) app.use("/v1", guard, trackRouter(track));

@@ -1,0 +1,112 @@
+$kind: http-request
+description: |-
+  One forwarded /on_track: the driver at the next point along the road route liveFrom -> liveTo.
+  Send it again to move on; after liveSteps sends the driver is at the drop. The collection
+  runner repeats it by itself. Watch it on /dev/live-map?orderId={{liveOrderId}}.
+method: POST
+url: '{{baseUrl}}/internal/v1/logistics/on_track'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: X-Internal-Token
+    value: '{{internalToken}}'
+body:
+  type: json
+  content: |-
+    {
+      "event": "order_tracking",
+      "orderId": "{{liveOrderId}}",
+      "status": "active",
+      "gps": "{{liveGps}}",
+      "locationTimestamp": "{{liveTs}}",
+      "path": [{ "lat_lng": "{{liveGps}}", "sequence": "1" }],
+      "updatedAt": "{{liveTs}}",
+      "config": { "attr": "tracking.location.gps", "type": "live_poll" },
+      "fulfillmentState": "Order-picked-up",
+      "startGps": "{{liveFrom}}",
+      "endGps": "{{liveTo}}"
+    }
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      // Our strings are "lat,lng"; decoded polylines are [lat, lng] (precision 5).
+      const from = pm.variables.get('liveFrom'), to = pm.variables.get('liveTo');
+      const steps = Math.max(1, Number(pm.variables.get('liveSteps')) || 8);
+      const step = Math.min(steps, (Number(pm.collectionVariables.get('liveStep')) || 0) + 1);
+
+      const decode = (str) => {
+        const pts = []; let i = 0, lat = 0, lng = 0;
+        while (i < str.length) {
+          let r = 0, s = 0, b;
+          do { b = str.charCodeAt(i++) - 63; r |= (b & 31) << s; s += 5; } while (b >= 32);
+          lat += (r & 1) ? ~(r >> 1) : (r >> 1);
+          r = 0; s = 0;
+          do { b = str.charCodeAt(i++) - 63; r |= (b & 31) << s; s += 5; } while (b >= 32);
+          lng += (r & 1) ? ~(r >> 1) : (r >> 1);
+          pts.push([lat / 1e5, lng / 1e5]);
+        }
+        return pts;
+      };
+      const rad = (d) => d * Math.PI / 180;
+      const meters = (a, b) => {
+        const dLat = rad(b[0] - a[0]), dLng = rad(b[1] - a[1]);
+        const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2;
+        return 2 * 6371000 * Math.asin(Math.sqrt(h));
+      };
+      // The point at fraction f of the polyline's length, interpolated inside its segment.
+      const along = (pts, f) => {
+        if (pts.length < 2) return pts[0];
+        const seg = pts.slice(1).map((p, i) => meters(pts[i], p));
+        let left = seg.reduce((a, b) => a + b, 0) * f;
+        for (let i = 0; i < seg.length; i++) {
+          if (left <= seg[i] || i === seg.length - 1) {
+            const k = seg[i] ? Math.min(1, left / seg[i]) : 0;
+            return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * k, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k];
+          }
+          left -= seg[i];
+        }
+        return pts[pts.length - 1];
+      };
+      const use = (polyline) => {
+        const p = step >= steps ? to.split(',').map(Number) : along(decode(polyline), step / steps);
+        pm.collectionVariables.set('liveStep', String(step));
+        pm.collectionVariables.set('liveGps', p[0].toFixed(6) + ',' + p[1].toFixed(6));
+        pm.collectionVariables.set('liveTs', new Date().toISOString());
+      };
+
+      const key = from + '|' + to;
+      const cached = pm.collectionVariables.get('livePolyline');
+      if (cached && pm.collectionVariables.get('liveRouteKey') === key) {
+        // Let the previous update finish (routing deadline 1.2 s) so breadcrumbs stay in order.
+        setTimeout(() => use(cached), 1500);
+      } else {
+        pm.sendRequest({
+          url: pm.variables.get('baseUrl') + '/v1/route?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to),
+          method: 'GET',
+          header: { 'X-Internal-Token': pm.variables.get('internalToken') || '' },
+        }, (err, res) => {
+          if (err || res.code !== 200) {
+            throw new Error('GET /v1/route failed (' + (err || res.code) + '): is OSRM running, and are liveFrom/liveTo inside coverage?');
+          }
+          const polyline = res.json().polyline;
+          pm.collectionVariables.set('livePolyline', polyline);
+          pm.collectionVariables.set('liveRouteKey', key);
+          use(polyline);
+        });
+      }
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('202 { accepted: true }', () => {
+        pm.response.to.have.status(202);
+        pm.expect(pm.response.json()).to.eql({ accepted: true });
+      });
+      const step = Number(pm.collectionVariables.get('liveStep'));
+      const steps = Math.max(1, Number(pm.variables.get('liveSteps')) || 8);
+      console.log('live map demo: step ' + step + '/' + steps + ' gps ' + pm.collectionVariables.get('liveGps'));
+      // Collection runner only (a manual send ignores it): repeat until the driver is at the drop.
+      if (step < steps && pm.execution && typeof pm.execution.setNextRequest === 'function') {
+        pm.execution.setNextRequest(pm.info.requestName);
+      }
